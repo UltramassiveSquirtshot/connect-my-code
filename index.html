@@ -149,5 +149,23 @@
     </div>
 
     <script src="script.js"></script>
+    <script>
+        // Solo feedback visivo: toggle .copied per 1.6s sui bottoni "Copia".
+        // Non interferisce con la logica di copia esistente.
+        ['copy-button', 'copy-summary-button'].forEach(function (id) {
+            var btn = document.getElementById(id);
+            if (!btn) return;
+            btn.addEventListener('click', function () {
+                var label = btn.querySelector('span');
+                var prev = label ? label.textContent : null;
+                btn.classList.add('copied');
+                if (label) label.textContent = 'Copiato';
+                setTimeout(function () {
+                    btn.classList.remove('copied');
+                    if (label && prev !== null) label.textContent = prev;
+                }, 1600);
+            });
+        });
+    </script>
 </body>
 </html>
