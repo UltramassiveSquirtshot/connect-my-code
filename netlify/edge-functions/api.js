@@ -30,6 +30,67 @@ function text(content, filename) {
     });
 }
 
+// ─── YouTube subtitle fetcher (server-side, no CORS issues) ───────────────────
+
+async function fetchYouTubeSubtitles(videoId) {
+    const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
+        }
+    });
+
+    if (!res.ok) throw new Error(`YouTube non raggiungibile: ${res.status}`);
+
+    const html = await res.text();
+    const match = html.match(/"captionTracks":(\[.*?\])/);
+    if (!match) throw new Error('Nessun sottotitolo disponibile per questo video');
+
+    let tracks;
+    try {
+        tracks = JSON.parse(match[1]);
+    } catch (e) {
+        throw new Error('Errore nel parsing dei dati sottotitoli di YouTube');
+    }
+
+    const track =
+        tracks.find(t => t.languageCode === 'it') ||
+        tracks.find(t => t.languageCode === 'en') ||
+        tracks[0];
+
+    if (!track) throw new Error('Nessuna traccia sottotitoli trovata');
+
+    const baseUrl = track.baseUrl.replace(/\\u0026/g, '&');
+    const subRes = await fetch(baseUrl);
+    if (!subRes.ok) throw new Error(`Errore nel download sottotitoli: ${subRes.status}`);
+
+    const xml = await subRes.text();
+
+    const subtitles = xml
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&#39;/g, "'")
+        .replace(/&quot;/g, '"')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!subtitles) throw new Error('Sottotitoli vuoti dopo il parsing');
+
+    return subtitles;
+}
+
+async function handleFetchSubtitles(url) {
+    const videoId = url.searchParams.get('videoId');
+    if (!videoId) return json({ message: 'VideoId mancante' }, 400);
+
+    const subtitles = await fetchYouTubeSubtitles(videoId);
+    return json({ subtitles });
+}
+
+// ─── Existing handlers ────────────────────────────────────────────────────────
+
 async function handleSummarize(request) {
     const { subtitles, length = 'medium', style = 'detailed', videoId } = await request.json();
 
@@ -96,6 +157,8 @@ async function handleDownload(url) {
     return text(content, `youtube_${record.video_id}_${suffix}.txt`);
 }
 
+// ─── Router ───────────────────────────────────────────────────────────────────
+
 export default async (request) => {
     if (request.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: cors });
@@ -112,6 +175,10 @@ export default async (request) => {
                 db: isDbEnabled(),
                 runtime: 'netlify-edge'
             });
+        }
+
+        if (pathname === '/api/fetch-subtitles' && request.method === 'GET') {
+            return await handleFetchSubtitles(url);
         }
 
         if (pathname === '/api/summarize' && request.method === 'POST') {
