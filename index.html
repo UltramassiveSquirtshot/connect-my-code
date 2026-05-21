@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YoutubeTranscriptor — Watch Less, Learn More</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="bg-grid" aria-hidden="true"></div>
+    <div class="bg-glow bg-glow--cyan" aria-hidden="true"></div>
+    <div class="bg-glow bg-glow--violet" aria-hidden="true"></div>
+
+    <div class="container">
+        <header>
+            <div class="logo-container">
+                <img src="logo-sr.png" alt="YoutubeTranscriptor" class="logo">
+            </div>
+            <p class="tagline">
+                <span class="tagline__prompt">&gt;</span>
+                Watch Less, Learn More
+                <span class="tagline__caret"></span>
+            </p>
+        </header>
+
+        <main>
+            <section class="input-section glass-panel">
+                <form id="youtube-form">
+                    <div class="form-group">
+                        <span class="input-icon"><i class="fab fa-youtube"></i></span>
+                        <input type="text" id="youtube-url" placeholder="https://www.youtube.com/watch?v=..." required spellcheck="false" autocomplete="off">
+                        <div class="info-tooltip">
+                            <i class="fas fa-info-circle info-icon"></i>
+                            <div class="tooltip-content">
+                                <h3>Come Funziona</h3>
+                                <p>Questa applicazione estrae i sottotitoli dai video YouTube e utilizza Fast Recap per generare una sintesi dei concetti principali. L'utente può scegliere la lunghezza e lo stile del riassunto. Il processo avviene in due fasi:</p>
+                                <ol>
+                                    <li>Estrazione dei sottotitoli dal video YouTube</li>
+                                    <li>Analisi del testo con Fast Recap per creare una sintesi coerente e informativa</li>
+                                </ol>
+                                <p>La qualità della sintesi dipende dalla disponibilità e dalla qualità dei sottotitoli del video.</p>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </section>
+
+            <div class="options-and-preview">
+                <section class="ai-options glass-panel">
+                    <h3><i class="fas fa-sliders-h"></i> Opzioni di Sintesi</h3>
+                    <div class="options-row">
+                        <div class="option-group">
+                            <label for="summary-length">Lunghezza</label>
+                            <select id="summary-length">
+                                <option value="short">Breve (2-3 paragrafi)</option>
+                                <option value="medium" selected>Media (4-5 paragrafi)</option>
+                                <option value="long">Lunga (6-8 paragrafi)</option>
+                            </select>
+                        </div>
+                        <div class="option-group">
+                            <label for="summary-style">Stile</label>
+                            <select id="summary-style">
+                                <option value="concise">Conciso</option>
+                                <option value="detailed" selected>Dettagliato</option>
+                                <option value="bullet">Punti chiave</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button id="extract-button" type="submit" form="youtube-form" class="primary-button">
+                        <span class="btn-glow"></span>
+                        <i class="fas fa-bolt"></i>
+                        <span>Genera Sintesi</span>
+                    </button>
+                </section>
+
+                <section class="video-section glass-panel">
+                    <div class="loader" id="loader"><span></span><span></span><span></span></div>
+                    <div id="error-message" class="error-message"></div>
+                    <div id="video-container" class="video-container">
+                        <h2><i class="fas fa-video"></i> Video</h2>
+                        <div id="player-wrapper"></div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="results-container">
+                <section class="summary-section">
+                    <div id="summary-container" class="summary-container glass-panel">
+                        <div class="summary-header">
+                            <div class="section-label">
+                                <span class="section-label__dot"></span>
+                                <span>OUTPUT</span>
+                            </div>
+                            <div class="button-group">
+                                <button id="copy-summary-button" class="action-button" title="Copia negli appunti">
+                                    <i class="fas fa-copy"></i>
+                                    <span>Copia</span>
+                                </button>
+                                <button id="download-summary-button" class="action-button" title="Scarica come file di testo">
+                                    <i class="fas fa-download"></i>
+                                    <span>Scarica</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="summary-text" class="summary-text">
+                            <div class="placeholder-text">// La sintesi del video apparirà qui dopo l'elaborazione...</div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="tabs-container">
+                <div class="tabs">
+                    <button class="tab-button active" data-tab="summary"><i class="fas fa-wand-magic-sparkles"></i> Sintesi</button>
+                    <button class="tab-button" data-tab="subtitles"><i class="fas fa-closed-captioning"></i> Sottotitoli</button>
+                </div>
+
+                <div id="subtitles-tab" class="tab-content">
+                    <div id="subtitles-container" class="subtitles-container glass-panel">
+                        <div class="subtitles-header">
+                            <div class="section-label">
+                                <span class="section-label__dot"></span>
+                                <span>TRANSCRIPT</span>
+                            </div>
+                            <div class="button-group">
+                                <button id="copy-button" class="action-button" title="Copia negli appunti">
+                                    <i class="fas fa-copy"></i>
+                                    <span>Copia</span>
+                                </button>
+                                <button id="download-button" class="action-button" title="Scarica come file di testo">
+                                    <i class="fas fa-download"></i>
+                                    <span>Scarica</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="subtitles-text" class="subtitles-text"></div>
+                    </div>
+                </div>
+
+                <div id="summary-tab" class="tab-content active">
+                    <!-- Il contenuto è stato spostato sopra -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+    <script>
+        // Solo feedback visivo: toggle .copied per 1.6s sui bottoni "Copia".
+        // Non interferisce con la logica di copia esistente.
+        ['copy-button', 'copy-summary-button'].forEach(function (id) {
+            var btn = document.getElementById(id);
+            if (!btn) return;
+            btn.addEventListener('click', function () {
+                var label = btn.querySelector('span');
+                var prev = label ? label.textContent : null;
+                btn.classList.add('copied');
+                if (label) label.textContent = 'Copiato';
+                setTimeout(function () {
+                    btn.classList.remove('copied');
+                    if (label && prev !== null) label.textContent = prev;
+                }, 1600);
+            });
+        });
+    </script>
+</body>
+</html>
