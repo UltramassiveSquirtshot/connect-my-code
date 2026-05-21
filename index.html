@@ -3,27 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YoutubeTranscriptor</title>
+    <title>YoutubeTranscriptor — Watch Less, Learn More</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+    <div class="bg-glow bg-glow--cyan" aria-hidden="true"></div>
+    <div class="bg-glow bg-glow--violet" aria-hidden="true"></div>
+
     <div class="container">
-        <!-- 1. LOGO -->
         <header>
             <div class="logo-container">
-                <img src="logo-sr.png" alt="YoutubeTranscriptor Logo" class="logo">
+                <img src="logo-sr.png" alt="YoutubeTranscriptor" class="logo">
             </div>
-            <!-- 2. SLOGAN -->
-            <p>Watch Less, Learn More</p>
+            <p class="tagline">
+                <span class="tagline__prompt">&gt;</span>
+                Watch Less, Learn More
+                <span class="tagline__caret"></span>
+            </p>
         </header>
-        
+
         <main>
-            <!-- 3. SEZIONE INPUT -->
-            <section class="input-section">
+            <section class="input-section glass-panel">
                 <form id="youtube-form">
                     <div class="form-group">
-                        <input type="text" id="youtube-url" placeholder="https://www.youtube.com/watch?v=..." required>
+                        <span class="input-icon"><i class="fab fa-youtube"></i></span>
+                        <input type="text" id="youtube-url" placeholder="https://www.youtube.com/watch?v=..." required spellcheck="false" autocomplete="off">
                         <div class="info-tooltip">
                             <i class="fas fa-info-circle info-icon"></i>
                             <div class="tooltip-content">
@@ -40,14 +49,12 @@
                 </form>
             </section>
 
-            <!-- Nuova sezione per opzioni e thumbnail -->
             <div class="options-and-preview">
-                <!-- Colonna 1: Opzioni di Sintesi -->
-                <section class="ai-options">
+                <section class="ai-options glass-panel">
                     <h3><i class="fas fa-sliders-h"></i> Opzioni di Sintesi</h3>
                     <div class="options-row">
                         <div class="option-group">
-                            <label for="summary-length">Lunghezza della sintesi:</label>
+                            <label for="summary-length">Lunghezza</label>
                             <select id="summary-length">
                                 <option value="short">Breve (2-3 paragrafi)</option>
                                 <option value="medium" selected>Media (4-5 paragrafi)</option>
@@ -55,7 +62,7 @@
                             </select>
                         </div>
                         <div class="option-group">
-                            <label for="summary-style">Stile della sintesi:</label>
+                            <label for="summary-style">Stile</label>
                             <select id="summary-style">
                                 <option value="concise">Conciso</option>
                                 <option value="detailed" selected>Dettagliato</option>
@@ -63,14 +70,15 @@
                             </select>
                         </div>
                     </div>
-                    <button id="extract-button" type="submit" form="youtube-form" class="secondary-button">
-                        <i class="fas fa-sync-alt"></i> Genera Sintesi
+                    <button id="extract-button" type="submit" form="youtube-form" class="primary-button">
+                        <span class="btn-glow"></span>
+                        <i class="fas fa-bolt"></i>
+                        <span>Genera Sintesi</span>
                     </button>
                 </section>
 
-                <!-- Colonna 2: Thumbnail -->
-                <section class="video-section">
-                    <div class="loader" id="loader"></div>
+                <section class="video-section glass-panel">
+                    <div class="loader" id="loader"><span></span><span></span><span></span></div>
                     <div id="error-message" class="error-message"></div>
                     <div id="video-container" class="video-container">
                         <h2><i class="fas fa-video"></i> Video</h2>
@@ -80,62 +88,66 @@
             </div>
 
             <div class="results-container">
-                <!-- 6. SEZIONE SUMMARY -->
                 <section class="summary-section">
-                    <div id="summary-container" class="summary-container">
+                    <div id="summary-container" class="summary-container glass-panel">
                         <div class="summary-header">
-                            <h2><i class="fas fa-brain"></i> Sintesi Gemini</h2>
+                            <div class="section-label">
+                                <span class="section-label__dot"></span>
+                                <span>OUTPUT</span>
+                            </div>
                             <div class="button-group">
                                 <button id="copy-summary-button" class="action-button" title="Copia negli appunti">
-                                    <i class="fas fa-copy"></i> Copia
+                                    <i class="fas fa-copy"></i>
+                                    <span>Copia</span>
                                 </button>
                                 <button id="download-summary-button" class="action-button" title="Scarica come file di testo">
-                                    <i class="fas fa-download"></i> Scarica
+                                    <i class="fas fa-download"></i>
+                                    <span>Scarica</span>
                                 </button>
                             </div>
                         </div>
                         <div id="summary-text" class="summary-text">
-                            <div class="placeholder-text">La sintesi del video apparirà qui dopo l'elaborazione...</div>
+                            <div class="placeholder-text">// La sintesi del video apparirà qui dopo l'elaborazione...</div>
                         </div>
                     </div>
                 </section>
             </div>
 
-            <!-- Spostiamo i tabs in fondo -->
             <div class="tabs-container">
                 <div class="tabs">
-                    <button class="tab-button active" data-tab="summary"><i class="fas fa-brain"></i> Sintesi</button>
+                    <button class="tab-button active" data-tab="summary"><i class="fas fa-wand-magic-sparkles"></i> Sintesi</button>
                     <button class="tab-button" data-tab="subtitles"><i class="fas fa-closed-captioning"></i> Sottotitoli</button>
                 </div>
-                
+
                 <div id="subtitles-tab" class="tab-content">
-                    <div id="subtitles-container" class="subtitles-container">
+                    <div id="subtitles-container" class="subtitles-container glass-panel">
                         <div class="subtitles-header">
-                            <h2><i class="fas fa-closed-captioning"></i> Sottotitoli Completi</h2>
+                            <div class="section-label">
+                                <span class="section-label__dot"></span>
+                                <span>TRANSCRIPT</span>
+                            </div>
                             <div class="button-group">
                                 <button id="copy-button" class="action-button" title="Copia negli appunti">
-                                    <i class="fas fa-copy"></i> Copia
+                                    <i class="fas fa-copy"></i>
+                                    <span>Copia</span>
                                 </button>
                                 <button id="download-button" class="action-button" title="Scarica come file di testo">
-                                    <i class="fas fa-download"></i> Scarica
+                                    <i class="fas fa-download"></i>
+                                    <span>Scarica</span>
                                 </button>
                             </div>
                         </div>
                         <div id="subtitles-text" class="subtitles-text"></div>
                     </div>
                 </div>
-                
+
                 <div id="summary-tab" class="tab-content active">
                     <!-- Il contenuto è stato spostato sopra -->
                 </div>
             </div>
         </main>
-        
-        <footer>
-            <p>Questa applicazione utilizza Google Gemini tramite OpenRouter per l'elaborazione AI. I sottotitoli vengono inviati a un server sicuro per l'elaborazione.</p>
-        </footer>
     </div>
-    
+
     <script src="script.js"></script>
 </body>
-</html> 
+</html>
