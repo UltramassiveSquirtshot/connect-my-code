@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YoutubeTranscriptor</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 1. LOGO -->
+        <header>
+            <div class="logo-container">
+                <img src="logo-sr.png" alt="YoutubeTranscriptor Logo" class="logo">
+            </div>
+            <!-- 2. SLOGAN -->
+            <p>Watch Less, Learn More</p>
+        </header>
+        
+        <main>
+            <!-- 3. SEZIONE INPUT -->
+            <section class="input-section">
+                <form id="youtube-form">
+                    <div class="form-group">
+                        <input type="text" id="youtube-url" placeholder="https://www.youtube.com/watch?v=..." required>
+                        <div class="info-tooltip">
+                            <i class="fas fa-info-circle info-icon"></i>
+                            <div class="tooltip-content">
+                                <h3>Come Funziona</h3>
+                                <p>Questa applicazione estrae i sottotitoli dai video YouTube e utilizza Fast Recap per generare una sintesi dei concetti principali. L'utente può scegliere la lunghezza e lo stile del riassunto. Il processo avviene in due fasi:</p>
+                                <ol>
+                                    <li>Estrazione dei sottotitoli dal video YouTube</li>
+                                    <li>Analisi del testo con Fast Recap per creare una sintesi coerente e informativa</li>
+                                </ol>
+                                <p>La qualità della sintesi dipende dalla disponibilità e dalla qualità dei sottotitoli del video.</p>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Nuova sezione per opzioni e thumbnail -->
+            <div class="options-and-preview">
+                <!-- Colonna 1: Opzioni di Sintesi -->
+                <section class="ai-options">
+                    <h3><i class="fas fa-sliders-h"></i> Opzioni di Sintesi</h3>
+                    <div class="options-row">
+                        <div class="option-group">
+                            <label for="summary-length">Lunghezza della sintesi:</label>
+                            <select id="summary-length">
+                                <option value="short">Breve (2-3 paragrafi)</option>
+                                <option value="medium" selected>Media (4-5 paragrafi)</option>
+                                <option value="long">Lunga (6-8 paragrafi)</option>
+                            </select>
+                        </div>
+                        <div class="option-group">
+                            <label for="summary-style">Stile della sintesi:</label>
+                            <select id="summary-style">
+                                <option value="concise">Conciso</option>
+                                <option value="detailed" selected>Dettagliato</option>
+                                <option value="bullet">Punti chiave</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button id="extract-button" type="submit" form="youtube-form" class="secondary-button">
+                        <i class="fas fa-sync-alt"></i> Genera Sintesi
+                    </button>
+                </section>
+
+                <!-- Colonna 2: Thumbnail -->
+                <section class="video-section">
+                    <div class="loader" id="loader"></div>
+                    <div id="error-message" class="error-message"></div>
+                    <div id="video-container" class="video-container">
+                        <h2><i class="fas fa-video"></i> Video</h2>
+                        <div id="player-wrapper"></div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="results-container">
+                <!-- 6. SEZIONE SUMMARY -->
+                <section class="summary-section">
+                    <div id="summary-container" class="summary-container">
+                        <div class="summary-header">
+                            <h2><i class="fas fa-brain"></i> Sintesi Gemini</h2>
+                            <div class="button-group">
+                                <button id="copy-summary-button" class="action-button" title="Copia negli appunti">
+                                    <i class="fas fa-copy"></i> Copia
+                                </button>
+                                <button id="download-summary-button" class="action-button" title="Scarica come file di testo">
+                                    <i class="fas fa-download"></i> Scarica
+                                </button>
+                            </div>
+                        </div>
+                        <div id="summary-text" class="summary-text">
+                            <div class="placeholder-text">La sintesi del video apparirà qui dopo l'elaborazione...</div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Spostiamo i tabs in fondo -->
+            <div class="tabs-container">
+                <div class="tabs">
+                    <button class="tab-button active" data-tab="summary"><i class="fas fa-brain"></i> Sintesi</button>
+                    <button class="tab-button" data-tab="subtitles"><i class="fas fa-closed-captioning"></i> Sottotitoli</button>
+                </div>
+                
+                <div id="subtitles-tab" class="tab-content">
+                    <div id="subtitles-container" class="subtitles-container">
+                        <div class="subtitles-header">
+                            <h2><i class="fas fa-closed-captioning"></i> Sottotitoli Completi</h2>
+                            <div class="button-group">
+                                <button id="copy-button" class="action-button" title="Copia negli appunti">
+                                    <i class="fas fa-copy"></i> Copia
+                                </button>
+                                <button id="download-button" class="action-button" title="Scarica come file di testo">
+                                    <i class="fas fa-download"></i> Scarica
+                                </button>
+                            </div>
+                        </div>
+                        <div id="subtitles-text" class="subtitles-text"></div>
+                    </div>
+                </div>
+                
+                <div id="summary-tab" class="tab-content active">
+                    <!-- Il contenuto è stato spostato sopra -->
+                </div>
+            </div>
+        </main>
+        
+        <footer>
+            <p>Questa applicazione utilizza Google Gemini tramite OpenRouter per l'elaborazione AI. I sottotitoli vengono inviati a un server sicuro per l'elaborazione.</p>
+        </footer>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html> 
