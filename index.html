@@ -69,6 +69,13 @@
                                 <option value="bullet">Punti chiave</option>
                             </select>
                         </div>
+                        <!-- ADD THIS -->
+                        <div class="option-group">
+                            <label for="summary-model">Modello</label>
+                            <select id="summary-model">
+                                <option value="google/gemini-2.0-pro-exp-02-05:free">Gemini Pro</option>
+                            </select>
+                        </div>
                     </div>
                     <button id="extract-button" type="submit" form="youtube-form" class="primary-button">
                         <span class="btn-glow"></span>
@@ -108,6 +115,10 @@
                         </div>
                         <div id="summary-text" class="summary-text">
                             <div class="placeholder-text">// La sintesi del video apparirà qui dopo l'elaborazione...</div>
+                                <button id="regenerate-button" class="action-button" style="margin-top: 1rem;">
+                                    <i class="fas fa-redo"></i>
+                                    <span>Rigenera</span>
+                            </button>
                         </div>
                     </div>
                 </section>

@@ -43,7 +43,28 @@ async function fetchYouTubeSubtitles(videoId) {
     if (!res.ok) throw new Error(`YouTube non raggiungibile: ${res.status}`);
 
     const html = await res.text();
-    const match = html.match(/"captionTracks":(\[.*?\])/);
+
+// Replace this broken regex:
+// const match = html.match(/"captionTracks":(\[.*?\])/);
+
+// With this:
+const playerMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
+if (!playerMatch) throw new Error('Nessun sottotitolo disponibile per questo video');
+
+let playerResponse;
+try {
+  playerResponse = JSON.parse(playerMatch[1]);
+} catch (e) {
+  throw new Error('Errore nel parsing della risposta di YouTube');
+}
+
+const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+if (!tracks || !tracks.length) throw new Error('Nessun sottotitolo disponibile per questo video');
+
+const track =
+  tracks.find(t => t.languageCode === 'it') ||
+  tracks.find(t => t.languageCode === 'en') ||
+  tracks[0];
     if (!match) throw new Error('Nessun sottotitolo disponibile per questo video');
 
     let tracks;
@@ -67,14 +88,15 @@ async function fetchYouTubeSubtitles(videoId) {
     const xml = await subRes.text();
 
     const subtitles = xml
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&#39;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/\s+/g, ' ')
-        .trim();
+    .replace(/<[^>]+>/g, ' ')     // Remove XML tags
+    .replace(/&amp;/g, '&')        // Decode &
+    .replace(/&lt;/g, '<')         // Decode <
+    .replace(/&gt;/g, '>')         // Decode >
+    .replace(/&#39;/g, "'")        // Decode apostrophe
+    .replace(/&apos;/g, "'")       // Decode apostrophe (XML style)
+    .replace(/&quot;/g, '"')       // Decode quote
+    .replace(/\s+/g, ' ')          // Collapse whitespace
+    .trim();
 
     if (!subtitles) throw new Error('Sottotitoli vuoti dopo il parsing');
 
