@@ -1,17 +1,17 @@
 // api/fetch-subtitles.js
-// Strategia 1 (primaria): YouTube Data API v3 key dell'utente
-//   → captions.list → timedtext URL
-// Strategia 2+3 (fallback): InnerTube con chiave hardcoded pubblica
-//   → stessa chiave usata da yt-dlp, embedded nel JS di youtube.com
+//
+// Il problema core: Vercel (AWS us-east) è in blacklist YouTube per richieste dirette.
+// Supadata usa infrastruttura propria non bloccata → risolve il problema.
+//
+// Strategia 1 (primaria): Supadata API — servizio gratuito dedicato ai transcript YouTube
+// Strategia 2: YouTube Data API v3 captions.list + timedtext (torna spesso vuoto)
+// Strategia 3+4: InnerTube hardcoded (bloccato da Vercel IPs, ma teniamo come fallback)
 
 export const config = { maxDuration: 30 };
 
-// Chiave InnerTube hardcoded — è pubblica, embedded nel sorgente YouTube
-// Non è la YouTube Data API v3 key: è specifica per /youtubei/v1/ endpoints
 const INNERTUBE_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
-
-// YouTube Data API v3 key dell'utente (Google Console)
-const DATA_API_KEY = process.env.YOUTUBE_API_KEY;
+const DATA_API_KEY  = process.env.YOUTUBE_API_KEY;
+const SUPADATA_KEY  = process.env.SUPADATA_API_KEY; // opzionale — più richieste/giorno
 
 function extractVideoId(input) {
     const p = [
@@ -39,11 +39,16 @@ function xmlToItems(xml) {
     return items;
 }
 
+function offsetToTimestamp(ms) {
+    const s = Math.floor((ms||0)/1000);
+    return `[${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}]`;
+}
+
 function format(items) {
-    return items.map(({ text, offset }) => {
-        const s = Math.floor((offset||0)/1000);
-        return `[${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}] ${text.trim()}`;
-    }).filter(l => l.length > 8).join('\n');
+    return items
+        .map(({ text, offset }) => `${offsetToTimestamp(offset)} ${text.trim()}`)
+        .filter(l => l.length > 8)
+        .join('\n');
 }
 
 function pickTrack(tracks) {
@@ -54,8 +59,13 @@ function pickTrack(tracks) {
     );
 }
 
-async function downloadXml(url, headers) {
-    const res = await fetch(url, { headers: { 'Cookie': 'SOCS=CAI; CONSENT=YES+cb', ...headers } });
+async function downloadXml(url) {
+    const res = await fetch(url, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Cookie': 'SOCS=CAI; CONSENT=YES+cb',
+        }
+    });
     if (!res.ok) throw new Error(`download XML HTTP ${res.status}`);
     const xml = await res.text();
     const items = xmlToItems(xml);
@@ -63,9 +73,56 @@ async function downloadXml(url, headers) {
     return items;
 }
 
-// ── 1 (primaria): Data API v3 captions.list + timedtext ─────────────────────
-// Usa la YouTube Data API v3 key dell'utente per ottenere l'elenco ufficiale
-// delle tracce; poi scarica il contenuto via timedtext (funziona per CC pubblici)
+// ── 1. Supadata (primaria) ────────────────────────────────────────────────────
+// API gratuita dedicata ai transcript YouTube: https://supadata.ai
+// Bypass completo del bot detection YouTube — usa proxy IP propri
+// Free tier: ~10 req/min senza key, di più con key registrata (gratuita)
+async function strategySupadata(videoId) {
+    const url = new URL('https://api.supadata.ai/v1/youtube/transcript');
+    url.searchParams.set('videoId', videoId);
+    url.searchParams.set('lang', 'en');
+
+    const headers = { 'Accept': 'application/json' };
+    if (SUPADATA_KEY) headers['x-api-key'] = SUPADATA_KEY;
+
+    const res = await fetch(url.toString(), { headers });
+
+    // Supadata restituisce 404 se non trova il transcript, 402 se quota esaurita
+    if (res.status === 404) throw new Error('Supadata: transcript non trovato per questo video');
+    if (res.status === 402) throw new Error('Supadata: quota gratuita esaurita, registra SUPADATA_API_KEY');
+    if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Supadata HTTP ${res.status}: ${body.slice(0,120)}`);
+    }
+
+    const data = await res.json();
+
+    // Risposta Supadata: { content: [{text, offset, duration}] | string }
+    if (typeof data.content === 'string') {
+        // Modalità text=true: testo puro senza timestamp
+        if (!data.content?.trim()) throw new Error('Supadata: content vuoto');
+        return {
+            items: [{ text: data.content, offset: 0 }],
+            lang: data.lang || 'en',
+            auto: false,
+            source: 'supadata',
+            rawText: true
+        };
+    }
+
+    const chunks = data.content || data.transcript || [];
+    if (!chunks.length) throw new Error('Supadata: nessun chunk restituito');
+
+    const items = chunks.map(c => ({
+        text: (c.text || c.content || '').trim(),
+        offset: (c.offset ?? c.start ?? 0)
+    })).filter(i => i.text);
+
+    if (!items.length) throw new Error('Supadata: items vuoti dopo mapping');
+    return { items, lang: data.lang || 'en', auto: false, source: 'supadata' };
+}
+
+// ── 2. YouTube Data API v3 captions.list + timedtext ────────────────────────
 async function strategyDataAPI(videoId) {
     if (!DATA_API_KEY) throw new Error('YOUTUBE_API_KEY non impostata');
 
@@ -73,7 +130,6 @@ async function strategyDataAPI(videoId) {
         `https://www.googleapis.com/youtube/v3/captions?part=snippet&videoId=${videoId}&key=${DATA_API_KEY}`
     );
     const listData = await listRes.json();
-
     if (listData.error) throw new Error(`captions.list ${listData.error.code}: ${listData.error.message}`);
     if (!listData.items?.length) throw new Error('captions.list: nessuna traccia');
 
@@ -83,17 +139,21 @@ async function strategyDataAPI(videoId) {
 
     const lang = t.snippet?.language || 'en';
     const isAuto = t.snippet?.trackKind === 'asr';
-    const params = new URLSearchParams({ v: videoId, lang, fmt: 'srv3' });
-    if (isAuto) params.set('kind', 'asr');
 
-    const items = await downloadXml(
-        `https://www.youtube.com/api/timedtext?${params}`,
-        { 'User-Agent': 'Mozilla/5.0' }
-    );
-    return { items, lang, auto: isAuto, source: 'data-api-timedtext' };
+    // Prova tutti i formati XML
+    for (const fmt of ['srv3', 'ttml', 'vtt']) {
+        const params = new URLSearchParams({ v: videoId, lang, fmt });
+        if (isAuto) params.set('kind', 'asr');
+        try {
+            const items = await downloadXml(`https://www.youtube.com/api/timedtext?${params}`);
+            return { items, lang, auto: isAuto, source: 'data-api-timedtext' };
+        } catch(e) {
+            if (fmt === 'vtt') throw e; // ultimo tentativo fallito
+        }
+    }
 }
 
-// ── 2 (fallback A): InnerTube WEB con chiave hardcoded ──────────────────────
+// ── 3. InnerTube WEB (hardcoded key, spesso bloccato da Vercel IPs) ──────────
 async function strategyInnertubeWEB(videoId) {
     const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
     const res = await fetch(
@@ -101,38 +161,30 @@ async function strategyInnertubeWEB(videoId) {
         {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': UA,
-                'X-Youtube-Client-Name': '1',
-                'X-Youtube-Client-Version': '2.20240313.05.00',
+                'Content-Type': 'application/json', 'User-Agent': UA,
+                'X-Youtube-Client-Name': '1', 'X-Youtube-Client-Version': '2.20240313.05.00',
                 'Origin': 'https://www.youtube.com',
                 'Referer': `https://www.youtube.com/watch?v=${videoId}`,
                 'Cookie': 'SOCS=CAI; CONSENT=YES+cb',
             },
-            body: JSON.stringify({
-                videoId,
-                context: { client: { clientName:'WEB', clientVersion:'2.20240313.05.00', hl:'en', gl:'US' } }
-            })
+            body: JSON.stringify({ videoId, context: { client: { clientName:'WEB', clientVersion:'2.20240313.05.00', hl:'en', gl:'US' } } })
         }
     );
     const text = await res.text();
     if (!res.ok) throw new Error(`InnerTube WEB HTTP ${res.status}: ${text.slice(0,120)}`);
-    let data; try { data = JSON.parse(text); } catch { throw new Error('InnerTube WEB: risposta non-JSON'); }
-
+    let data; try { data = JSON.parse(text); } catch { throw new Error('InnerTube WEB: non-JSON'); }
     const status = data?.playabilityStatus?.status;
     if (status && status !== 'OK') throw new Error(`InnerTube WEB: ${data?.playabilityStatus?.reason || status}`);
-
     const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
     if (!tracks?.length) throw new Error('InnerTube WEB: nessuna traccia');
-
     const track = pickTrack(tracks);
     let url = decodeUrl(track.baseUrl || '');
     if (!url.includes('fmt=')) url += '&fmt=srv3';
-    const items = await downloadXml(url, { 'User-Agent': UA });
+    const items = await downloadXml(url);
     return { items, lang: track.languageCode, auto: track.kind === 'asr', source: 'innertube-web' };
 }
 
-// ── 3 (fallback B): InnerTube TVHTML5 con chiave hardcoded ──────────────────
+// ── 4. InnerTube TV (hardcoded key) ─────────────────────────────────────────
 async function strategyInnertubeTV(videoId) {
     const UA = 'Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1';
     const res = await fetch(
@@ -140,33 +192,25 @@ async function strategyInnertubeTV(videoId) {
         {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': UA,
-                'X-Youtube-Client-Name': '7',
-                'X-Youtube-Client-Version': '7.20240101.20.00',
+                'Content-Type': 'application/json', 'User-Agent': UA,
+                'X-Youtube-Client-Name': '7', 'X-Youtube-Client-Version': '7.20240101.20.00',
                 'Origin': 'https://www.youtube.com',
                 'Cookie': 'SOCS=CAI; CONSENT=YES+cb',
             },
-            body: JSON.stringify({
-                videoId,
-                context: { client: { clientName:'TVHTML5', clientVersion:'7.20240101.20.00', hl:'en', gl:'US' } }
-            })
+            body: JSON.stringify({ videoId, context: { client: { clientName:'TVHTML5', clientVersion:'7.20240101.20.00', hl:'en', gl:'US' } } })
         }
     );
     const text = await res.text();
     if (!res.ok) throw new Error(`InnerTube TV HTTP ${res.status}: ${text.slice(0,120)}`);
     let data; try { data = JSON.parse(text); } catch { throw new Error('InnerTube TV: non-JSON'); }
-
     const status = data?.playabilityStatus?.status;
     if (status && status !== 'OK') throw new Error(`InnerTube TV: ${data?.playabilityStatus?.reason || status}`);
-
     const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
     if (!tracks?.length) throw new Error('InnerTube TV: nessuna traccia');
-
     const track = pickTrack(tracks);
     let url = decodeUrl(track.baseUrl || '');
     if (!url.includes('fmt=')) url += '&fmt=srv3';
-    const items = await downloadXml(url, { 'User-Agent': UA });
+    const items = await downloadXml(url);
     return { items, lang: track.languageCode, auto: track.kind === 'asr', source: 'innertube-tv' };
 }
 
@@ -182,16 +226,18 @@ export default async function handler(req, res) {
 
     const errors = [];
     for (const [name, fn] of [
+        ['supadata',       strategySupadata],
         ['data-api',       strategyDataAPI],
         ['innertube-web',  strategyInnertubeWEB],
         ['innertube-tv',   strategyInnertubeTV],
     ]) {
         try {
             const r = await fn(videoId);
-            console.log(`[subtitles] OK ${r.source} videoId=${videoId} lang=${r.lang} items=${r.items.length}`);
+            console.log(`[subtitles] OK ${r.source} ${videoId} lang=${r.lang} items=${r.items.length}`);
             return res.status(200).json({
-                subtitles: format(r.items), source: r.source,
-                lang: r.lang, isAutoGenerated: r.auto, itemCount: r.items.length
+                subtitles: r.rawText ? r.items[0].text : format(r.items),
+                source: r.source, lang: r.lang,
+                isAutoGenerated: r.auto, itemCount: r.items.length
             });
         } catch(e) {
             const msg = e.message.slice(0,120);
