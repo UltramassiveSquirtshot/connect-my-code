@@ -26,10 +26,11 @@ document.addEventListener('DOMContentLoaded', () => {
   
     const BACKEND_URL = window.location.origin;
   
-    // CORS Proxy — rotates between multiple to avoid rate limits
+    // Working CORS proxies (updated May 2026)
     const CORS_PROXIES = [
       'https://corsproxy.io/?',
-      'https://api.allorigins.win/raw?url=',
+      'https://corsproxy.org/?',
+      'https://api.codetabs.com/v1/proxy?quest=',
     ];
     let proxyIndex = 0;
   
@@ -201,30 +202,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // ─── CLIENT-SIDE SUBTITLE FETCHING via CORS proxy ───────────────────
   
     async function fetchSubtitles(videoId) {
-      // Try each proxy with fallback
       let lastError = null;
   
-      for (let attempt = 0; attempt < CORS_PROXIES.length; attempt++) {
+      for (let attempt = 0; attempt < CORS_PROXIES.length * 2; attempt++) {
         const proxy = getCorsProxy();
   
         try {
           console.log(`Tentativo ${attempt + 1} con proxy: ${proxy}`);
   
-          // Step 1: Fetch YouTube watch page via proxy to get player response
-          const watchUrl = `${proxy}${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}`;
-          const watchRes = await fetch(watchUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-            }
-          });
+          // Step 1: Fetch YouTube watch page via proxy
+          const watchUrl = proxy + encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`);
+          const watchRes = await fetch(watchUrl);
   
           if (!watchRes.ok) {
-            if (watchRes.status === 429) {
-              console.warn(`Proxy ${proxy} ha ricevuto 429, provo il prossimo...`);
-              continue;
-            }
-            throw new Error(`YouTube non raggiungibile: ${watchRes.status}`);
+            console.warn(`Proxy ${proxy} ha ricevuto ${watchRes.status}, provo il prossimo...`);
+            lastError = new Error(`Proxy ha ricevuto ${watchRes.status}`);
+            continue;
           }
   
           const html = await watchRes.text();
@@ -262,13 +255,8 @@ document.addEventListener('DOMContentLoaded', () => {
           }
           timedTextUrl = timedTextUrl.replace(/\\u0026/g, '&').replace(/\\u0027/g, "'");
   
-          const proxyTimedUrl = `${proxy}${encodeURIComponent(timedTextUrl)}`;
-          const subRes = await fetch(proxyTimedUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-            }
-          });
+          const proxyTimedUrl = proxy + encodeURIComponent(timedTextUrl);
+          const subRes = await fetch(proxyTimedUrl);
   
           if (!subRes.ok) {
             throw new Error(`Errore nel download sottotitoli: ${subRes.status}`);
@@ -296,11 +284,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
           lastError = error;
           console.warn(`Proxy ${proxy} fallito:`, error.message);
-          // Continue to next proxy
         }
       }
   
-      // All proxies failed
       throw lastError || new Error('Impossibile recuperare i sottotitoli. Tutti i proxy hanno fallito.');
     }
   
@@ -309,7 +295,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const textMatches = [...xml.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g)];
   
       if (textMatches.length === 0) {
-        // Fallback: strip all XML tags
         return xml
           .replace(/<[^>]+>/g, ' ')
           .replace(/&amp;/g, '&')
