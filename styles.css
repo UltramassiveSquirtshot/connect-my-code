@@ -142,7 +142,7 @@ header { text-align: center; margin-bottom: var(--space-xl); }
 .logo-container img,
 .logo {
     width: 100%;
-    max-width: 380px;
+    max-width: 520px;
     height: auto;
 }
 
@@ -668,7 +668,7 @@ header { text-align: center; margin-bottom: var(--space-xl); }
 /* Responsive container */
 @media (max-width: 600px) {
     .container { padding: var(--space-lg) var(--space-md); }
-    .logo-container img { max-width: 260px; }
+    .logo-container img { max-width: 340px; }
     .summary-header, .subtitles-header { flex-direction: column; align-items: flex-start; }
     .button-group { width: 100%; }
     .action-button { flex: 1; justify-content: center; }
