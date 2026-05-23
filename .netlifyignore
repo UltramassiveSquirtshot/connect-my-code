@@ -1,6 +1,0 @@
-server/
-node_modules/
-.env
-.env.example
-README.md
-railway.toml
