@@ -1,5 +1,5 @@
 /**
- * YouTube Gemini Summarizer — Client-side subtitle fetch via CORS proxy
+ * YouTube Gemini Summarizer — Backend Node.js for subtitles
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -26,14 +26,6 @@ document.addEventListener('DOMContentLoaded', () => {
   
     const BACKEND_URL = window.location.origin;
   
-    // Working CORS proxies (updated May 2026)
-    const CORS_PROXIES = [
-      'https://corsproxy.io/?',
-      'https://corsproxy.org/?',
-      'https://api.codetabs.com/v1/proxy?quest=',
-    ];
-    let proxyIndex = 0;
-  
     let currentVideoId = null;
     let extractedSubtitles = null;
   
@@ -57,12 +49,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const modelGroup = modelSelector.closest('.option-group');
         if (modelGroup) modelGroup.style.display = 'none';
       }
-    }
-  
-    function getCorsProxy() {
-      const proxy = CORS_PROXIES[proxyIndex];
-      proxyIndex = (proxyIndex + 1) % CORS_PROXIES.length;
-      return proxy;
     }
   
     function switchTab(tabName) {
@@ -199,130 +185,47 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   
-    // ─── CLIENT-SIDE SUBTITLE FETCHING via CORS proxy ───────────────────
+    // ─── BACKEND SUBTITLE FETCHING via Netlify Node Function ───────────────────
   
     async function fetchSubtitles(videoId) {
-      let lastError = null;
-  
-      for (let attempt = 0; attempt < CORS_PROXIES.length * 2; attempt++) {
-        const proxy = getCorsProxy();
-  
-        try {
-          console.log(`Tentativo ${attempt + 1} con proxy: ${proxy}`);
-  
-          // Step 1: Fetch YouTube watch page via proxy
-          const watchUrl = proxy + encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`);
-          const watchRes = await fetch(watchUrl);
-  
-          if (!watchRes.ok) {
-            console.warn(`Proxy ${proxy} ha ricevuto ${watchRes.status}, provo il prossimo...`);
-            lastError = new Error(`Proxy ha ricevuto ${watchRes.status}`);
-            continue;
+      // Try cache first (Edge Function DB)
+      try {
+        const cached = await fetch(`${BACKEND_URL}/api/subtitles?videoId=${videoId}`);
+        if (cached.ok) {
+          const data = await cached.json();
+          if (data.subtitles) {
+            console.log('Sottotitoli recuperati dalla cache DB');
+            return data.subtitles;
           }
-  
-          const html = await watchRes.text();
-  
-          // Extract ytInitialPlayerResponse
-          const playerMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});\s*<\/script>/);
-          if (!playerMatch) {
-            throw new Error('Nessun sottotitolo disponibile per questo video');
-          }
-  
-          let playerResponse;
-          try {
-            playerResponse = JSON.parse(playerMatch[1]);
-          } catch (e) {
-            throw new Error('Errore nel parsing della risposta di YouTube');
-          }
-  
-          const captionTracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-          if (!captionTracks || captionTracks.length === 0) {
-            throw new Error('Nessun sottotitolo disponibile per questo video');
-          }
-  
-          // Pick best track
-          const track =
-            captionTracks.find(t => t.languageCode === 'it') ||
-            captionTracks.find(t => t.languageCode === 'en') ||
-            captionTracks[0];
-  
-          if (!track) throw new Error('Nessuna traccia sottotitoli trovata');
-  
-          // Step 2: Fetch timedtext via proxy
-          let timedTextUrl = track.baseUrl;
-          if (!timedTextUrl) {
-            timedTextUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${track.languageCode}&fmt=srv3`;
-          }
-          timedTextUrl = timedTextUrl.replace(/\\u0026/g, '&').replace(/\\u0027/g, "'");
-  
-          const proxyTimedUrl = proxy + encodeURIComponent(timedTextUrl);
-          const subRes = await fetch(proxyTimedUrl);
-  
-          if (!subRes.ok) {
-            throw new Error(`Errore nel download sottotitoli: ${subRes.status}`);
-          }
-  
-          const xml = await subRes.text();
-          const subtitles = parseSrv3Xml(xml);
-  
-          if (!subtitles || subtitles.trim().length === 0) {
-            throw new Error('Sottotitoli vuoti dopo il parsing');
-          }
-  
-          // Cache to backend DB if available (fire and forget)
-          try {
-            await fetch(`${BACKEND_URL}/api/subtitles`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ videoId, subtitles })
-            });
-          } catch (_) {}
-  
-          console.log('Sottotitoli recuperati con successo via proxy');
-          return subtitles;
-  
-        } catch (error) {
-          lastError = error;
-          console.warn(`Proxy ${proxy} fallito:`, error.message);
         }
+      } catch (_) {
+        console.log('Cache DB non disponibile');
       }
   
-      throw lastError || new Error('Impossibile recuperare i sottotitoli. Tutti i proxy hanno fallito.');
-    }
+      // Fetch via Netlify Node Function (no CORS issues)
+      console.log('Recupero sottotitoli dal backend Node...');
+      const response = await fetch(`/.netlify/functions/subtitles?videoId=${videoId}`);
   
-    // Parse YouTube SRV3 XML
-    function parseSrv3Xml(xml) {
-      const textMatches = [...xml.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g)];
-  
-      if (textMatches.length === 0) {
-        return xml
-          .replace(/<[^>]+>/g, ' ')
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&#39;/g, "'")
-          .replace(/&apos;/g, "'")
-          .replace(/&quot;/g, '"')
-          .replace(/\s+/g, ' ')
-          .trim();
+      if (!response.ok) {
+        let msg = 'Errore nel recupero sottotitoli';
+        try { msg = (await response.json()).message || msg; } catch (_) {}
+        throw new Error(msg);
       }
   
-      const lines = textMatches.map(match => {
-        let text = match[1];
-        text = text.replace(/<s[^>]*>/g, '').replace(/<\/s>/g, '');
-        text = text
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&#39;/g, "'")
-          .replace(/&apos;/g, "'")
-          .replace(/&quot;/g, '"')
-          .replace(/\n/g, ' ')
-          .trim();
-        return text;
-      }).filter(line => line.length > 0);
+      const data = await response.json();
+      if (!data.subtitles) throw new Error('Nessun sottotitolo restituito dal backend');
   
-      return lines.join(' ');
+      // Save to cache DB if available
+      try {
+        await fetch(`${BACKEND_URL}/api/subtitles`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId, subtitles: data.subtitles })
+        });
+      } catch (_) {}
+  
+      console.log('Sottotitoli recuperati con successo');
+      return data.subtitles;
     }
   
     // ─── UI helpers ──────────────────────────────────────────────────────────
