@@ -1,69 +1,79 @@
-# YoutubeTranscriptor
+# YouTube Transcript Summarizer
 
-Tutto su **Netlify**: frontend statico + **Edge Functions** come backend.
+Frontend statico + API serverless su **Vercel** (Node.js 20).  
+Estrae sottotitoli YouTube con timestamp → riassunto AI via OpenRouter → cache su Neon DB.
+
+---
 
 ## Struttura
 
 ```
-├── index.html              Frontend (root)
+├── index.html
 ├── styles.css
 ├── script.js
-├── netlify.toml
-└── netlify/edge-functions/
-    ├── api.js              Router API
-    └── lib/
-        ├── openrouter.js
-        └── db.js           Opzionale (Neon / Netlify DB)
+├── vercel.json
+├── package.json
+├── .env.example
+├── api/
+│   ├── fetch-subtitles.js   ← GET /api/fetch-subtitles?videoId=...
+│   ├── subtitles.js         ← GET/POST /api/subtitles (cache DB)
+│   ├── summarize.js         ← POST /api/summarize
+│   └── records/
+│       └── [id]/
+│           └── download.js  ← GET /api/records/:id/download
+└── lib/
+    ├── openrouter.js
+    └── db.js
 ```
 
-## Deploy su Netlify
+---
 
-1. Collega il repository
-2. **Publish directory**: `.` (root)
-3. **Environment variables** (Site settings → Environment variables):
-   - `OPENROUTER_API_KEY` — obbligatoria
-   - `AI_MODEL` — opzionale (default: `google/gemini-2.0-pro-exp-02-05:free`)
-   - `DATABASE_URL` — opzionale (per salvare riassunti e cache sottotitoli)
-4. Deploy
+## Perché Vercel invece di Netlify
 
-### Database (opzionale) — Supabase
+| | Netlify Edge Functions | Vercel Serverless |
+|---|---|---|
+| Runtime | **Deno** | **Node.js 20** |
+| `youtube-transcript` | ❌ Non funziona | ✅ Funziona |
+| DB pooling | Problematico | ✅ Stabile |
+| Free tier | 125k req/mese | 100k req/mese |
 
-Senza DB l’app funziona: estrazione sottotitoli nel browser + riassunto via Edge Function.
+---
 
-#### Collegare Supabase
+## Deploy su Vercel
 
-1. Vai su [supabase.com](https://supabase.com) → **New project**
-2. Scegli nome, password del database (salvala) e regione
-3. **Project Settings** → **Database** → **Connection string**
-4. Tab **ORM** o **URI**, modalità **Transaction** (pooler, porta **6543**) — adatta a Edge/serverless
-5. Copia la stringa e sostituisci `[YOUR-PASSWORD]` con la password del progetto
-6. Su **Netlify** → **Site configuration** → **Environment variables**:
-   - Nome: `DATABASE_URL`
-   - Valore: la connection string copiata
-7. **Redeploy** del sito
+1. Vai su [vercel.com](https://vercel.com) → **Add New Project**
+2. Importa questo repo GitHub
+3. **Framework Preset**: Other
+4. Aggiungi le variabili d'ambiente (vedi sotto)
+5. Deploy
 
-Le tabelle `transcripts` e `subtitle_cache` si creano automaticamente al primo riassunto salvato.
+### Variabili d'ambiente
 
-Puoi verificare i dati in Supabase → **Table Editor**.
+| Nome | Obbligatorio | Note |
+|------|-------------|------|
+| `OPENROUTER_API_KEY` | ✅ | La tua chiave OpenRouter |
+| `AI_MODEL` | No | Default: `google/gemini-2.0-pro-exp-02-05:free` |
+| `SITE_URL` | No | URL del sito deployato |
+| `DATABASE_URL` | No | Connection string Neon Postgres |
 
-#### Altre opzioni DB
+---
 
-- **Netlify DB**: Extensions → Netlify DB (usa `NETLIFY_DATABASE_URL`, già supportata)
-- **Neon** o altro Postgres: stessa variabile `DATABASE_URL`
+## Come funziona il fetching sottotitoli
+
+**Strategia doppia con fallback automatico:**
+
+1. **`youtube-transcript` via InnerTube API** (Android client) — priorità: en → en-US → qualsiasi lingua
+2. **HTML scraping** — fallback se InnerTube non risponde
+
+Entrambi restituiscono il testo con timestamp `[MM:SS]`.  
+I TED Talk hanno sottotitoli nativi in inglese → funziona sempre con il metodo 1.
+
+---
 
 ## Sviluppo locale
 
 ```bash
 npm install
-npx netlify dev
+cp .env.example .env.local
+vercel dev   # http://localhost:3000
 ```
-
-Apri l’URL indicato da `netlify dev` (di solito `http://localhost:8888`).
-
-## API (Edge)
-
-| Metodo | Path | Descrizione |
-|--------|------|-------------|
-| POST | `/api/summarize` | Genera riassunto (OpenRouter) |
-| GET/POST | `/api/subtitles` | Cache sottotitoli (solo con DB) |
-| GET | `/api/records/:id/download` | Download .txt (solo con DB) |
