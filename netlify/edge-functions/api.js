@@ -30,22 +30,24 @@ function text(content, filename) {
   });
 }
 
-// ─── YouTube subtitle fetcher (server-side, no CORS issues) ───────────────────
+// ─── YouTube subtitle fetcher (direct YouTube API — no third-party services) ───────────────────
 
 async function fetchYouTubeSubtitles(videoId) {
-  const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+  // Step 1: Get player response to find available caption tracks
+  const watchRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     }
   });
 
-  if (!res.ok) throw new Error(`YouTube non raggiungibile: ${res.status}`);
+  if (!watchRes.ok) throw new Error(`YouTube non raggiungibile: ${watchRes.status}`);
 
-  const html = await res.text();
+  const html = await watchRes.text();
 
-  // FIX: Extract captionTracks from ytInitialPlayerResponse instead of broken regex
-  const playerMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
+  // Extract ytInitialPlayerResponse
+  const playerMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});\s*<\/script>/);
   if (!playerMatch) throw new Error('Nessun sottotitolo disponibile per questo video');
 
   let playerResponse;
@@ -55,37 +57,91 @@ async function fetchYouTubeSubtitles(videoId) {
     throw new Error('Errore nel parsing della risposta di YouTube');
   }
 
-  const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-  if (!tracks || !tracks.length) throw new Error('Nessun sottotitolo disponibile per questo video');
+  const captionTracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if (!captionTracks || captionTracks.length === 0) {
+    throw new Error('Nessun sottotitolo disponibile per questo video');
+  }
 
+  // Pick best track: Italian > English > first available
   const track =
-    tracks.find(t => t.languageCode === 'it') ||
-    tracks.find(t => t.languageCode === 'en') ||
-    tracks[0];
+    captionTracks.find(t => t.languageCode === 'it') ||
+    captionTracks.find(t => t.languageCode === 'en') ||
+    captionTracks[0];
 
   if (!track) throw new Error('Nessuna traccia sottotitoli trovata');
 
-  const baseUrl = track.baseUrl.replace(/\\u0026/g, '&');
-  const subRes = await fetch(baseUrl);
+  // Step 2: Build timedtext URL and fetch subtitles
+  // The baseUrl from captionTracks already contains the signed URL to timedtext
+  let timedTextUrl = track.baseUrl;
+  if (!timedTextUrl) {
+    // Fallback: build URL manually
+    timedTextUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${track.languageCode}&fmt=srv3`;
+  }
+
+  // Decode unicode escapes in URL
+  timedTextUrl = timedTextUrl.replace(/\\u0026/g, '&').replace(/\\u0027/g, "'");
+
+  const subRes = await fetch(timedTextUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
+    }
+  });
+
   if (!subRes.ok) throw new Error(`Errore nel download sottotitoli: ${subRes.status}`);
 
   const xml = await subRes.text();
 
-  // FIX: Properly decode XML entities (was replacing entities with themselves)
-  const subtitles = xml
-    .replace(/<[^>]+>/g, ' ')       // Remove XML tags
-    .replace(/&amp;/g, '&')          // Decode &amp; → &
-    .replace(/&lt;/g, '<')           // Decode &lt; → <
-    .replace(/&gt;/g, '>')           // Decode &gt; → >
-    .replace(/&#39;/g, "'")          // Decode &#39; → '
-    .replace(/&apos;/g, "'")         // Decode &apos; → '
-    .replace(/&quot;/g, '"')         // Decode &quot; → "
-    .replace(/\s+/g, ' ')            // Collapse whitespace
-    .trim();
+  // Parse SRV3 XML format (YouTube's native subtitle format)
+  const subtitles = parseSrv3Xml(xml);
 
-  if (!subtitles) throw new Error('Sottotitoli vuoti dopo il parsing');
+  if (!subtitles || subtitles.trim().length === 0) {
+    throw new Error('Sottotitoli vuoti dopo il parsing');
+  }
 
   return subtitles;
+}
+
+// Parse YouTube SRV3 XML subtitle format
+function parseSrv3Xml(xml) {
+  // Remove XML tags but preserve text content
+  // SRV3 format: <text start="..." dur="...">Subtitle text</text>
+  // With possible <s> segments for styling (which we strip)
+
+  const textMatches = [...xml.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g)];
+
+  if (textMatches.length === 0) {
+    // Fallback: strip all XML tags and decode entities
+    return xml
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  const lines = textMatches.map(match => {
+    let text = match[1];
+    // Remove internal <s> styling tags
+    text = text.replace(/<s[^>]*>/g, '').replace(/<\/s>/g, '');
+    // Decode XML entities
+    text = text
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/\n/g, ' ')
+      .trim();
+    return text;
+  }).filter(line => line.length > 0);
+
+  return lines.join(' ');
 }
 
 async function handleFetchSubtitles(url) {
