@@ -204,7 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
       // Fetch via Netlify Node Function (no CORS issues)
       console.log('Recupero sottotitoli dal backend Node...');
-      const response = await fetch(`/.netlify/functions/subtitles?videoId=${videoId}`);
+      const response = await fetch(`${BACKEND_URL}/api/fetch-subtitles?videoId=${videoId}`);
   
       if (!response.ok) {
         let msg = 'Errore nel recupero sottotitoli';
