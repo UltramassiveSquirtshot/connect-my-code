@@ -1,9 +1,18 @@
 // api/fetch-subtitles.js
-// Con YOUTUBE_API_KEY: richieste autenticate → bypass bot detection Vercel IPs
-// Senza chiave: fallback non autenticati (spesso bloccati da datacenter)
+// Due tipi di key completamente diversi:
+//   INNERTUBE_KEY  = chiave hardcoded interna YouTube, usata da yt-dlp
+//                   → endpoint: /youtubei/v1/player
+//   YOUTUBE_API_KEY = YouTube Data API v3 key dell'utente (Google Console)
+//                   → endpoint: googleapis.com/youtube/v3/captions
+
 export const config = { maxDuration: 30 };
 
-const API_KEY = process.env.YOUTUBE_API_KEY;
+// Chiave InnerTube hardcoded — non è segreta, è embedded nel JS di YouTube
+// È quella che usa yt-dlp e tutti i client alternativi
+const INNERTUBE_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
+
+// YouTube Data API v3 key — quella dell'utente da Google Console
+const DATA_API_KEY = process.env.YOUTUBE_API_KEY;
 
 function extractVideoId(input) {
     const p = [
@@ -38,37 +47,47 @@ function format(items) {
     }).filter(l => l.length > 8).join('\n');
 }
 
-function extractJson(html, keyword) {
-    const idx = html.indexOf(keyword);
-    if (idx === -1) return null;
-    const start = html.indexOf('{', idx);
-    if (start === -1) return null;
-    let depth = 0;
-    for (let i = start; i < html.length; i++) {
-        if (html[i] === '{') depth++;
-        else if (html[i] === '}' && --depth === 0) {
-            try { return JSON.parse(html.slice(start, i+1)); } catch { return null; }
-        }
-    }
-    return null;
+// Sceglie la traccia migliore: en nativo > en auto-generated > prima disponibile
+function pickTrack(tracks) {
+    return (
+        tracks.find(t => t.languageCode?.startsWith('en') && !t.kind) ||
+        tracks.find(t => t.languageCode?.startsWith('en')) ||
+        tracks[0]
+    );
 }
 
-// ── Strategia 1 (con API key): InnerTube WEB autenticato ─────────────────────
-// La chiave WEB di YouTube autentica la richiesta → nessun bot detection
-// e restituisce i captionTracks con signed baseUrl direttamente
-async function innertubeWebWithKey(videoId) {
-    if (!API_KEY) throw new Error('YOUTUBE_API_KEY non configurata');
+async function downloadXml(url, ua) {
+    const res = await fetch(url, {
+        headers: {
+            'User-Agent': ua || 'Mozilla/5.0',
+            'Cookie': 'SOCS=CAI; CONSENT=YES+cb',
+        }
+    });
+    if (!res.ok) throw new Error(`download XML HTTP ${res.status}`);
+    const xml = await res.text();
+    const items = xmlToItems(xml);
+    if (!items.length) throw new Error('XML vuoto o formato non riconosciuto');
+    return items;
+}
+
+// ── Strategia 1: InnerTube WEB con chiave hardcoded ──────────────────────────
+// Questa è la stessa chiave usata da yt-dlp. Non è segreta — è embedded
+// nel sorgente JS di youtube.com. Autentica la richiesta come client WEB
+// legittimo → nessun bot detection da IP datacenter.
+async function innertubeWEB(videoId) {
+    const WEB_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
     const res = await fetch(
-        `https://www.youtube.com/youtubei/v1/player?key=${API_KEY}&prettyPrint=false`,
+        `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}&prettyPrint=false`,
         {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'User-Agent': WEB_UA,
                 'X-Youtube-Client-Name': '1',
                 'X-Youtube-Client-Version': '2.20240313.05.00',
                 'Origin': 'https://www.youtube.com',
-                'Referer': 'https://www.youtube.com/',
+                'Referer': `https://www.youtube.com/watch?v=${videoId}`,
+                'Cookie': 'SOCS=CAI; CONSENT=YES+cb',
             },
             body: JSON.stringify({
                 videoId,
@@ -76,133 +95,110 @@ async function innertubeWebWithKey(videoId) {
                     client: {
                         clientName: 'WEB',
                         clientVersion: '2.20240313.05.00',
-                        hl: 'en',
-                        gl: 'US',
-                        timeZone: 'UTC',
-                        utcOffsetMinutes: 0
+                        hl: 'en', gl: 'US',
+                        timeZone: 'UTC', utcOffsetMinutes: 0
                     }
                 }
             })
         }
     );
 
-    const bodyText = await res.text();
-    if (!res.ok) throw new Error(`InnerTube WEB HTTP ${res.status}: ${bodyText.slice(0,150)}`);
-
-    let data;
-    try { data = JSON.parse(bodyText); }
-    catch { throw new Error('InnerTube WEB: risposta non-JSON'); }
+    const text = await res.text();
+    if (!res.ok) throw new Error(`InnerTube WEB HTTP ${res.status}: ${text.slice(0,150)}`);
+    let data; try { data = JSON.parse(text); } catch { throw new Error('InnerTube WEB: non-JSON'); }
 
     const status = data?.playabilityStatus?.status;
-    if (status && status !== 'OK') {
-        throw new Error(`InnerTube WEB: ${data?.playabilityStatus?.reason || status}`);
-    }
+    if (status && status !== 'OK') throw new Error(`InnerTube WEB: ${data?.playabilityStatus?.reason || status}`);
 
     const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
     if (!tracks?.length) throw new Error('InnerTube WEB: nessuna traccia sottotitoli');
 
-    const track =
-        tracks.find(t => t.languageCode?.startsWith('en') && !t.kind) ||
-        tracks.find(t => t.languageCode?.startsWith('en')) ||
-        tracks[0];
+    const track = pickTrack(tracks);
+    let url = decodeUrl(track.baseUrl || '');
+    if (!url.includes('fmt=')) url += '&fmt=srv3';
 
-    let trackUrl = decodeUrl(track.baseUrl || '');
-    if (!trackUrl.includes('fmt=')) trackUrl += '&fmt=srv3';
-
-    const subRes = await fetch(trackUrl);
-    if (!subRes.ok) throw new Error(`InnerTube WEB: download XML HTTP ${subRes.status}`);
-
-    const xml = await subRes.text();
-    const items = xmlToItems(xml);
-    if (!items.length) throw new Error('InnerTube WEB: XML vuoto');
-    return { items, lang: track.languageCode, auto: track.kind === 'asr', source: 'innertube-web-key' };
+    const items = await downloadXml(url, WEB_UA);
+    return { items, lang: track.languageCode, auto: track.kind === 'asr', source: 'innertube-web' };
 }
 
-// ── Strategia 2 (con API key): captions.list → timedtext ────────────────────
-// Usa YouTube Data API v3 per listare le tracce, poi timedtext pubblico
-async function captionsListWithKey(videoId) {
-    if (!API_KEY) throw new Error('YOUTUBE_API_KEY non configurata');
+// ── Strategia 2: Data API v3 captions.list + timedtext ───────────────────────
+// Usa la YouTube Data API v3 key dell'utente per ottenere l'elenco ufficiale
+// delle tracce, poi costruisce l'URL timedtext per scaricare il contenuto.
+// Il timedtext endpoint risponde a video con CC pubblici senza OAuth.
+async function captionsListAPI(videoId) {
+    if (!DATA_API_KEY) throw new Error('YOUTUBE_API_KEY non configurata');
 
     const listRes = await fetch(
-        `https://www.googleapis.com/youtube/v3/captions?part=snippet&videoId=${videoId}&key=${API_KEY}`
+        `https://www.googleapis.com/youtube/v3/captions?part=snippet&videoId=${videoId}&key=${DATA_API_KEY}`
     );
-    if (!listRes.ok) throw new Error(`captions.list HTTP ${listRes.status}`);
     const listData = await listRes.json();
 
-    if (listData.error) throw new Error(`captions.list API error: ${listData.error.message}`);
+    if (listData.error) {
+        throw new Error(`captions.list error ${listData.error.code}: ${listData.error.message}`);
+    }
     if (!listData.items?.length) throw new Error('captions.list: nessuna traccia disponibile');
 
-    // Trova la traccia migliore: en nativo → en auto → prima disponibile
-    const track =
-        listData.items.find(i => i.snippet?.language?.startsWith('en') && i.snippet?.trackKind !== 'asr') ||
-        listData.items.find(i => i.snippet?.language?.startsWith('en')) ||
-        listData.items[0];
+    // Trova la traccia migliore dalla lista ufficiale
+    const items = listData.items;
+    const track = (
+        items.find(i => i.snippet?.language?.startsWith('en') && i.snippet?.trackKind !== 'asr') ||
+        items.find(i => i.snippet?.language?.startsWith('en')) ||
+        items[0]
+    );
 
     const lang = track.snippet?.language || 'en';
-    const name = track.snippet?.name || '';
     const isAuto = track.snippet?.trackKind === 'asr';
 
-    // Timedtext URL costruita manualmente — funziona per CC pubblici
+    // Costruisci URL timedtext (funziona per video con CC o auto-generated pubblici)
     const params = new URLSearchParams({ v: videoId, lang, fmt: 'srv3' });
-    if (name) params.set('name', name);
     if (isAuto) params.set('kind', 'asr');
 
-    const timedtextUrl = `https://www.youtube.com/api/timedtext?${params.toString()}`;
-    const subRes = await fetch(timedtextUrl, {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Cookie': 'SOCS=CAI; CONSENT=YES+cb',
-        }
-    });
-    if (!subRes.ok) throw new Error(`timedtext HTTP ${subRes.status}`);
-
-    const xml = await subRes.text();
-    const items = xmlToItems(xml);
-    if (!items.length) throw new Error('timedtext: XML vuoto');
-    return { items, lang, auto: isAuto, source: 'captions-list-key' };
+    const xmlItems = await downloadXml(
+        `https://www.youtube.com/api/timedtext?${params}`,
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    );
+    return { items: xmlItems, lang, auto: isAuto, source: 'data-api-timedtext' };
 }
 
-// ── Strategia 3 (senza API key): HTML scraping + GDPR cookie ─────────────────
-async function htmlScraping(videoId) {
-    const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cookie': 'SOCS=CAI; CONSENT=YES+cb',
-    };
+// ── Strategia 3: InnerTube TVHTML5 (client TV, meno restrizioni) ─────────────
+async function innertubeTV(videoId) {
+    const TV_UA = 'Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1';
+    const res = await fetch(
+        `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}&prettyPrint=false`,
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': TV_UA,
+                'X-Youtube-Client-Name': '7',
+                'X-Youtube-Client-Version': '7.20240101.20.00',
+                'Origin': 'https://www.youtube.com',
+                'Cookie': 'SOCS=CAI; CONSENT=YES+cb',
+            },
+            body: JSON.stringify({
+                videoId,
+                context: {
+                    client: { clientName:'TVHTML5', clientVersion:'7.20240101.20.00', hl:'en', gl:'US' }
+                }
+            })
+        }
+    );
+    const text = await res.text();
+    if (!res.ok) throw new Error(`InnerTube TV HTTP ${res.status}: ${text.slice(0,150)}`);
+    let data; try { data = JSON.parse(text); } catch { throw new Error('InnerTube TV: non-JSON'); }
 
-    const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, { headers });
-    if (!res.ok) throw new Error(`HTML fetch HTTP ${res.status}`);
-    const html = await res.text();
+    const status = data?.playabilityStatus?.status;
+    if (status && status !== 'OK') throw new Error(`InnerTube TV: ${data?.playabilityStatus?.reason || status}`);
 
-    if (html.includes('Sign in') && html.includes('bot')) {
-        throw new Error('Bot detection attivo: richiesta non autenticata bloccata');
-    }
+    const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    if (!tracks?.length) throw new Error('InnerTube TV: nessuna traccia');
 
-    const player =
-        extractJson(html, 'ytInitialPlayerResponse =') ||
-        extractJson(html, 'ytInitialPlayerResponse=');
-    if (!player) throw new Error('ytInitialPlayerResponse non trovato nell\'HTML');
+    const track = pickTrack(tracks);
+    let url = decodeUrl(track.baseUrl || '');
+    if (!url.includes('fmt=')) url += '&fmt=srv3';
 
-    const status = player?.playabilityStatus?.status;
-    if (status && status !== 'OK') throw new Error(`Video non disponibile: ${player?.playabilityStatus?.reason || status}`);
-
-    const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-    if (!tracks?.length) throw new Error('Nessuna traccia sottotitoli nel playerResponse');
-
-    const track =
-        tracks.find(t => t.languageCode?.startsWith('en') && !t.kind) ||
-        tracks.find(t => t.languageCode?.startsWith('en')) ||
-        tracks[0];
-
-    let trackUrl = decodeUrl(track.baseUrl || '');
-    if (!trackUrl.includes('fmt=')) trackUrl += '&fmt=srv3';
-
-    const subRes = await fetch(trackUrl, { headers });
-    if (!subRes.ok) throw new Error(`Download XML HTTP ${subRes.status}`);
-    const xml = await subRes.text();
-    const items = xmlToItems(xml);
-    if (!items.length) throw new Error('XML vuoto dopo parsing');
-    return { items, lang: track.languageCode, auto: track.kind === 'asr', source: 'html-scraping' };
+    const items = await downloadXml(url, TV_UA);
+    return { items, lang: track.languageCode, auto: track.kind === 'asr', source: 'innertube-tv' };
 }
 
 // ── Handler ──────────────────────────────────────────────────────────────────
@@ -216,44 +212,28 @@ export default async function handler(req, res) {
     if (!videoId) return res.status(400).json({ message: 'videoId non valido o mancante' });
 
     const errors = [];
+    const strategies = [
+        ['innertube-web',       () => innertubeWEB(videoId)],
+        ['data-api-timedtext',  () => captionsListAPI(videoId)],
+        ['innertube-tv',        () => innertubeTV(videoId)],
+    ];
 
-    // Strategie con API key (priorità — bypassano bot detection)
-    for (const [name, fn] of [
-        ['innertube-web-key', () => innertubeWebWithKey(videoId)],
-        ['captions-list-key', () => captionsListWithKey(videoId)],
-    ]) {
+    for (const [name, fn] of strategies) {
         try {
-            const result = await fn();
-            console.log(`[fetch-subtitles] OK via ${result.source}: ${videoId} lang=${result.lang} items=${result.items.length}`);
+            const r = await fn();
+            console.log(`[subtitles] OK ${r.source}: ${videoId} lang=${r.lang} items=${r.items.length}`);
             return res.status(200).json({
-                subtitles: format(result.items),
-                source: result.source,
-                lang: result.lang,
-                isAutoGenerated: result.auto,
-                itemCount: result.items.length
+                subtitles: format(r.items),
+                source: r.source, lang: r.lang,
+                isAutoGenerated: r.auto, itemCount: r.items.length
             });
         } catch(e) {
-            errors.push(`${name}: ${e.message.slice(0,100)}`);
-            console.error(`[fetch-subtitles] ${name} failed: ${e.message}`);
+            const msg = e.message.slice(0, 120);
+            errors.push(`${name}: ${msg}`);
+            console.error(`[subtitles] FAIL ${name}: ${msg}`);
         }
     }
 
-    // Fallback senza API key
-    try {
-        const result = await htmlScraping(videoId);
-        console.log(`[fetch-subtitles] OK via ${result.source}: ${videoId}`);
-        return res.status(200).json({
-            subtitles: format(result.items),
-            source: result.source,
-            lang: result.lang,
-            isAutoGenerated: result.auto,
-            itemCount: result.items.length
-        });
-    } catch(e) {
-        errors.push(`html-scraping: ${e.message.slice(0,100)}`);
-        console.error(`[fetch-subtitles] html-scraping failed: ${e.message}`);
-    }
-
-    console.error(`[fetch-subtitles] ALL FAILED for ${videoId}:`, JSON.stringify(errors));
-    return res.status(502).json({ message: 'Impossibile recuperare i sottotitoli.', videoId, errors, hint: API_KEY ? null : 'Imposta YOUTUBE_API_KEY su Vercel per abilitare le richieste autenticate' });
+    console.error(`[subtitles] ALL FAILED ${videoId}: ${JSON.stringify(errors)}`);
+    return res.status(502).json({ message: 'Impossibile recuperare i sottotitoli.', videoId, errors });
 }
