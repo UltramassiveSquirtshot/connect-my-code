@@ -1,6 +1,5 @@
 // api/fetch-subtitles.js — Vercel Serverless Function (Node.js)
-// Primo tentativo: youtube-transcript via InnerTube API (stabile, niente API key)
-// Fallback: scraping HTML YouTube (stesso approccio del vecchio edge function)
+// Tre strategie in cascata per massima affidabilita' sui TED Talk
 
 import { YoutubeTranscript } from 'youtube-transcript';
 
@@ -22,54 +21,107 @@ function formatWithTimestamps(items) {
         const mm = String(Math.floor(s / 60)).padStart(2, '0');
         const ss = String(s % 60).padStart(2, '0');
         return `[${mm}:${ss}] ${text.trim()}`;
-    }).join('\n');
+    }).filter(line => line.length > 8).join('\n');
 }
 
-async function fetchViaHTMLScraping(videoId) {
-    const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
+// ── Strategia 2: scraping HTML con bracket-counter robusto ──────────────────
+// Non usa regex sul JSON (fragile) ma conta le parentesi graffe
+
+function extractNestedJson(html, keyword) {
+    const keyIdx = html.indexOf(keyword);
+    if (keyIdx === -1) return null;
+    const start = html.indexOf('{', keyIdx);
+    if (start === -1) return null;
+    let depth = 0;
+    for (let i = start; i < html.length; i++) {
+        if (html[i] === '{') depth++;
+        else if (html[i] === '}') {
+            depth--;
+            if (depth === 0) {
+                try { return JSON.parse(html.slice(start, i + 1)); }
+                catch { return null; }
+            }
         }
-    });
+    }
+    return null;
+}
+
+function xmlTimedTextToItems(xml) {
+    const items = [];
+    const re = /<text[^>]*\bstart="([^"]+)"[^>]*>([\s\S]*?)<\/text>/g;
+    let m;
+    while ((m = re.exec(xml)) !== null) {
+        const offset = Math.round(parseFloat(m[1]) * 1000);
+        const text = m[2]
+            .replace(/<[^>]+>/g, '')
+            .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+            .replace(/&#39;/g, "'").replace(/&apos;/g, "'").replace(/&quot;/g, '"')
+            .replace(/\n/g, ' ').trim();
+        if (text) items.push({ text, offset });
+    }
+    return items;
+}
+
+const YT_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+};
+
+async function fetchViaHTMLScraping(videoId) {
+    const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, { headers: YT_HEADERS });
     if (!res.ok) throw new Error(`YouTube non raggiungibile: ${res.status}`);
     const html = await res.text();
 
-    const playerMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});\s*<\/script>/);
-    if (!playerMatch) throw new Error('Struttura HTML YouTube cambiata, parser da aggiornare');
+    // Prova ytInitialPlayerResponse (vecchio e nuovo formato)
+    const playerData =
+        extractNestedJson(html, 'ytInitialPlayerResponse =') ||
+        extractNestedJson(html, 'ytInitialPlayerResponse=') ||
+        extractNestedJson(html, '"ytInitialPlayerResponse":{');
 
-    const playerResponse = JSON.parse(playerMatch[1]);
-    const captionTracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    if (!playerData) throw new Error('ytInitialPlayerResponse non trovato — YouTube ha cambiato struttura HTML');
+
+    const captionTracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
     if (!captionTracks?.length) throw new Error('Nessun sottotitolo disponibile per questo video');
 
+    // Priorita': en nativo → en auto → it → primo disponibile
     const track =
+        captionTracks.find(t => t.languageCode === 'en' && !t.kind) ||
         captionTracks.find(t => t.languageCode === 'en') ||
         captionTracks.find(t => t.languageCode === 'it') ||
         captionTracks[0];
 
-    let timedTextUrl = (track.baseUrl || '').replace(/\\u0026/g, '&').replace(/\\u0027/g, "'");
-    const subRes = await fetch(timedTextUrl, {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-    });
+    let timedTextUrl = (track.baseUrl || '')
+        .replace(/\\u0026/g, '&')
+        .replace(/\\u0027/g, "'");
+
+    if (!timedTextUrl) throw new Error('baseUrl mancante nella traccia sottotitoli');
+
+    const subRes = await fetch(timedTextUrl, { headers: YT_HEADERS });
     if (!subRes.ok) throw new Error(`Errore download sottotitoli: ${subRes.status}`);
-
     const xml = await subRes.text();
-    const items = [];
-    const re = /<text start="([^"]*)" dur="([^"]*)">([\s\S]*?)<\/text>/g;
-    let m;
-    while ((m = re.exec(xml)) !== null) {
-        const offset = Math.round(parseFloat(m[1]) * 1000);
-        const text = m[3]
-            .replace(/<[^>]+>/g, '')
-            .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-            .replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
-        if (text) items.push({ text, offset });
-    }
 
-    if (!items.length) throw new Error('Sottotitoli vuoti dopo il parsing');
-    return formatWithTimestamps(items);
+    const items = xmlTimedTextToItems(xml);
+    if (!items.length) throw new Error('Parsing XML: nessun elemento trovato');
+    return items;
+}
+
+// ── Strategia 3: timedtext URL diretta (no signed URL, solo per CC pubblici) ─
+async function fetchViaTimedtextDirect(videoId) {
+    // Prova l'endpoint pubblico timedtext — funziona solo se i sottotitoli
+    // sono CC (Creative Commons) o pubblici senza firma. I TED Talk spesso lo sono.
+    const langs = ['en', 'it', 'en-US'];
+    for (const lang of langs) {
+        const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${lang}&fmt=srv3`;
+        try {
+            const res = await fetch(url, { headers: YT_HEADERS });
+            if (!res.ok) continue;
+            const xml = await res.text();
+            const items = xmlTimedTextToItems(xml);
+            if (items.length) return items;
+        } catch { /* continua */ }
+    }
+    throw new Error('Timedtext diretto: nessun risultato per le lingue provate');
 }
 
 export default async function handler(req, res) {
@@ -78,11 +130,12 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     if (req.method === 'OPTIONS') return res.status(200).end();
 
-    const raw = req.query.videoId;
-    const videoId = extractVideoId(raw);
+    const videoId = extractVideoId(req.query.videoId);
     if (!videoId) return res.status(400).json({ message: 'videoId non valido o mancante' });
 
-    // 1. InnerTube API via youtube-transcript (priorità: en, en-US, qualsiasi)
+    const errors = [];
+
+    // ── 1. youtube-transcript (InnerTube API) ─────────────────────────────
     for (const lang of ['en', 'en-US', null]) {
         try {
             const opts = lang ? { lang } : {};
@@ -93,14 +146,37 @@ export default async function handler(req, res) {
                     source: 'innertube'
                 });
             }
-        } catch (_) { /* prossimo tentativo */ }
+        } catch (e) {
+            if (lang === null) errors.push(`innertube: ${e.message}`);
+        }
     }
 
-    // 2. Fallback: scraping HTML (stesso approccio del vecchio edge function)
+    // ── 2. HTML scraping con JSON bracket-counter ─────────────────────────
     try {
-        const subtitles = await fetchViaHTMLScraping(videoId);
-        return res.status(200).json({ subtitles, source: 'scraping' });
-    } catch (err) {
-        return res.status(502).json({ message: err.message });
+        const items = await fetchViaHTMLScraping(videoId);
+        return res.status(200).json({
+            subtitles: formatWithTimestamps(items),
+            source: 'html-scraping'
+        });
+    } catch (e) {
+        errors.push(`html-scraping: ${e.message}`);
     }
+
+    // ── 3. Timedtext URL diretta ──────────────────────────────────────────
+    try {
+        const items = await fetchViaTimedtextDirect(videoId);
+        return res.status(200).json({
+            subtitles: formatWithTimestamps(items),
+            source: 'timedtext-direct'
+        });
+    } catch (e) {
+        errors.push(`timedtext-direct: ${e.message}`);
+    }
+
+    // Tutti e tre falliti — restituiamo i dettagli per debug
+    console.error(`[fetch-subtitles] All strategies failed for ${videoId}:`, errors);
+    return res.status(502).json({
+        message: 'Impossibile recuperare i sottotitoli.',
+        errors
+    });
 }
