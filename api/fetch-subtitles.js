@@ -1,19 +1,21 @@
 // api/fetch-subtitles.js
 //
 // Strategie in ordine:
-// 1. youtube-transcript npm — libreria che bypassa il blocco IP Vercel
-// 2. Page scrape  — estrae ytInitialPlayerResponse dalla pagina YT, URL firmati
-// 3. Supadata     — servizio terzo con proxy propri (richiede SUPADATA_API_KEY)
-// 4. Data API     — captions.list + timedtext (spesso vuoto da IP Vercel)
-// 5. InnerTube WEB/TV — fallback hardcoded (spesso bloccato da IP Vercel)
+// 1. RapidAPI youtube-transcript3 — proxy esterno, bypassa blocco IP Vercel
+// 2. youtube-transcript npm
+// 3. Page scrape  — estrae ytInitialPlayerResponse dalla pagina YT, URL firmati
+// 4. Supadata     — servizio terzo con proxy propri (richiede SUPADATA_API_KEY)
+// 5. Data API     — captions.list + timedtext (spesso vuoto da IP Vercel)
+// 6. InnerTube WEB/TV — fallback hardcoded (spesso bloccato da IP Vercel)
 
 import { YoutubeTranscript } from 'youtube-transcript';
 
 export const config = { maxDuration: 30 };
 
-const INNERTUBE_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
-const DATA_API_KEY  = process.env.YOUTUBE_API_KEY;
-const SUPADATA_KEY  = process.env.SUPADATA_API_KEY;
+const INNERTUBE_KEY  = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
+const DATA_API_KEY   = process.env.YOUTUBE_API_KEY;
+const SUPADATA_KEY   = process.env.SUPADATA_API_KEY;
+const RAPIDAPI_KEY   = process.env.RAPIDAPI_KEY;
 
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const BROWSER_HEADERS = {
@@ -86,7 +88,33 @@ function pickTrack(tracks) {
         || tracks[0];
 }
 
-// ── 1. youtube-transcript ────────────────────────────────────────────────────
+// ── 1. RapidAPI youtube-transcript3 ─────────────────────────────────────────
+async function strategyRapidAPI(videoId) {
+    if (!RAPIDAPI_KEY) throw new Error('RAPIDAPI_KEY non impostata');
+    const res = await fetch(
+        `https://youtube-transcript3.p.rapidapi.com/api/transcript?videoId=${videoId}`,
+        { headers: {
+            'x-rapidapi-host': 'youtube-transcript3.p.rapidapi.com',
+            'x-rapidapi-key': RAPIDAPI_KEY,
+            'Content-Type': 'application/json',
+        }}
+    );
+    if (res.status === 429) throw new Error('RapidAPI: quota esaurita');
+    if (res.status === 403) throw new Error('RapidAPI: chiave non valida o piano scaduto');
+    if (!res.ok) { const b = await res.text(); throw new Error(`RapidAPI HTTP ${res.status}: ${b.slice(0,100)}`); }
+    const data = await res.json();
+    // risposta: { transcript: [{text, start, duration}] } oppure { transcripts: [...] }
+    const raw = data.transcript || data.transcripts || data.results || [];
+    if (!raw.length) throw new Error('RapidAPI: nessun transcript nel body');
+    const items = raw.map(i => ({
+        text: (i.text || i.content || '').replace(/\n/g, ' ').trim(),
+        offset: Math.round((i.start ?? i.offset ?? i.startMs ?? 0) * (i.startMs != null ? 1 : 1000)),
+    })).filter(i => i.text);
+    if (!items.length) throw new Error('RapidAPI: items vuoti dopo mapping');
+    return { items, lang: data.lang || 'en', auto: true, source: 'rapidapi' };
+}
+
+// ── 2. youtube-transcript ────────────────────────────────────────────────────
 async function strategyYoutubeTranscript(videoId) {
     const langs = ['en', 'en-US', 'en-GB'];
     let lastErr;
@@ -239,12 +267,13 @@ export default async function handler(req, res) {
 
     const errors = [];
     for (const [name, fn] of [
+        ['rapidapi',          () => strategyRapidAPI(videoId)],
         ['youtube-transcript', () => strategyYoutubeTranscript(videoId)],
         ['page-scrape',        () => strategyPageScrape(videoId)],
-        ['supadata',         () => strategySupadata(videoId)],
-        ['data-api',         () => strategyDataAPI(videoId)],
-        ['innertube-web',    () => strategyInnertube(videoId, 'WEB')],
-        ['innertube-tv',     () => strategyInnertube(videoId, 'TVHTML5')],
+        ['supadata',           () => strategySupadata(videoId)],
+        ['data-api',           () => strategyDataAPI(videoId)],
+        ['innertube-web',      () => strategyInnertube(videoId, 'WEB')],
+        ['innertube-tv',       () => strategyInnertube(videoId, 'TVHTML5')],
     ]) {
         try {
             const r = await fn();
