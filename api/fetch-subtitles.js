@@ -1,10 +1,13 @@
 // api/fetch-subtitles.js
 //
 // Strategie in ordine:
-// 1. Page scrape  — estrae ytInitialPlayerResponse dalla pagina YT, URL firmati
-// 2. Supadata     — servizio terzo con proxy propri (richiede SUPADATA_API_KEY)
-// 3. Data API     — captions.list + timedtext (spesso vuoto da IP Vercel)
-// 4. InnerTube WEB/TV — fallback hardcoded (spesso bloccato da IP Vercel)
+// 1. youtube-transcript npm — libreria che bypassa il blocco IP Vercel
+// 2. Page scrape  — estrae ytInitialPlayerResponse dalla pagina YT, URL firmati
+// 3. Supadata     — servizio terzo con proxy propri (richiede SUPADATA_API_KEY)
+// 4. Data API     — captions.list + timedtext (spesso vuoto da IP Vercel)
+// 5. InnerTube WEB/TV — fallback hardcoded (spesso bloccato da IP Vercel)
+
+import { YoutubeTranscript } from 'youtube-transcript';
 
 export const config = { maxDuration: 30 };
 
@@ -83,7 +86,30 @@ function pickTrack(tracks) {
         || tracks[0];
 }
 
-// ── 1. Page scrape ────────────────────────────────────────────────────────────
+// ── 1. youtube-transcript ────────────────────────────────────────────────────
+async function strategyYoutubeTranscript(videoId) {
+    const langs = ['en', 'en-US', 'en-GB'];
+    let lastErr;
+    for (const lang of langs) {
+        try {
+            const items = await YoutubeTranscript.fetchTranscript(videoId, { lang });
+            if (!items?.length) continue;
+            const mapped = items.map(i => ({ text: (i.text||'').replace(/\n/g,' ').trim(), offset: Math.round((i.offset||0)) })).filter(i => i.text);
+            if (mapped.length) return { items: mapped, lang, auto: true, source: 'youtube-transcript' };
+        } catch(e) { lastErr = e; }
+    }
+    // fallback: no lang filter
+    try {
+        const items = await YoutubeTranscript.fetchTranscript(videoId);
+        if (items?.length) {
+            const mapped = items.map(i => ({ text: (i.text||'').replace(/\n/g,' ').trim(), offset: Math.round((i.offset||0)) })).filter(i => i.text);
+            if (mapped.length) return { items: mapped, lang: 'auto', auto: true, source: 'youtube-transcript' };
+        }
+    } catch(e) { lastErr = e; }
+    throw new Error(`youtube-transcript: ${lastErr?.message || 'nessun risultato'}`);
+}
+
+// ── 2. Page scrape ────────────────────────────────────────────────────────────
 // Fetches the YouTube watch page, extracts ytInitialPlayerResponse which contains
 // signed timedtext URLs that work without OAuth or API key.
 async function strategyPageScrape(videoId) {
@@ -213,7 +239,8 @@ export default async function handler(req, res) {
 
     const errors = [];
     for (const [name, fn] of [
-        ['page-scrape',      () => strategyPageScrape(videoId)],
+        ['youtube-transcript', () => strategyYoutubeTranscript(videoId)],
+        ['page-scrape',        () => strategyPageScrape(videoId)],
         ['supadata',         () => strategySupadata(videoId)],
         ['data-api',         () => strategyDataAPI(videoId)],
         ['innertube-web',    () => strategyInnertube(videoId, 'WEB')],
