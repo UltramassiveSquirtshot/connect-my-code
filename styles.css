@@ -452,23 +452,18 @@ header { text-align: center; margin-bottom: var(--space-xl); }
     letter-spacing: 0.04em;
 }
 
-/* Stato retry: barra che pulsa in arancione */
+/* Stato retry: barra arancione con shimmer GPU-accelerato */
 .progress-bar-fill.progress-retry {
-    background: linear-gradient(90deg, #ff6b00, #ff9500, #ff6b00);
-    background-size: 200% 100%;
-    box-shadow: 0 0 12px rgba(255, 107, 0, 0.6);
-    animation: progress-retry-pulse 1.2s ease-in-out infinite, progress-retry-slide 1.8s linear infinite;
+    background: linear-gradient(90deg, #ff6b00 0%, #ff9500 40%, #ffb700 60%, #ff6b00 100%);
+    box-shadow: 0 0 16px rgba(255, 107, 0, 0.7);
+    animation: progress-retry-pulse 1.1s ease-in-out infinite;
     transition: none;
+    transform-origin: left center;
 }
 
 @keyframes progress-retry-pulse {
-    0%, 100% { opacity: 0.75; box-shadow: 0 0 8px rgba(255, 107, 0, 0.4); }
-    50% { opacity: 1; box-shadow: 0 0 20px rgba(255, 107, 0, 0.9); }
-}
-
-@keyframes progress-retry-slide {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
+    0%, 100% { opacity: 0.7; filter: brightness(0.9); }
+    50% { opacity: 1; filter: brightness(1.3); }
 }
 
 /* Error */
@@ -666,29 +661,10 @@ header { text-align: center; margin-bottom: var(--space-xl); }
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* DB action button (injected by JS via #db-download-actions) — solo styling difensivo */
-#db-download-actions {
-    margin-top: var(--space-md);
+.regen-row {
     display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
-#db-download-actions button {
-    padding: 0.55rem 0.95rem;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid var(--border-soft);
-    color: var(--text-primary);
-    border-radius: var(--r-sm);
-    font-family: var(--font-mono);
-    font-size: 0.82rem;
-    cursor: pointer;
-    transition: all var(--t-fast);
-}
-#db-download-actions button:hover {
-    color: var(--neon-violet);
-    border-color: var(--neon-violet-soft);
-    background: var(--neon-violet-dim);
-    box-shadow: 0 0 18px -4px var(--neon-violet-soft);
+    justify-content: flex-end;
+    margin-top: var(--space-sm);
 }
 
 /* Toast-like (se script aggiunge classe .toast) */
