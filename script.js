@@ -17,6 +17,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const copySummaryButton = document.getElementById('copy-summary-button');
     const downloadSummaryButton = document.getElementById('download-summary-button');
     const loader = document.getElementById('loader');
+    const progressWrap = document.getElementById('progress-wrap');
+    const progressFill = document.getElementById('progress-fill');
+    const progressLabel = document.getElementById('progress-label');
     const errorMessage = document.getElementById('error-message');
     const tabButtons = document.querySelectorAll('.tab-button');
     const tabContents = document.querySelectorAll('.tab-content');
@@ -86,19 +89,25 @@ document.addEventListener('DOMContentLoaded', () => {
       currentVideoId = videoId;
       showLoader();
       hideError();
-  
+
       try {
         if (videoContainer.style.display !== 'block') embedYouTubeVideo(videoId);
-  
+
+        setProgress(10, '> Connessione al backend...');
         const subtitles = await fetchSubtitles(videoId);
-  
+
         if (!subtitles || subtitles.trim() === '') {
           throw new Error('Non sono stati trovati sottotitoli per questo video.');
         }
-  
+
+        setProgress(55, '> Sottotitoli recuperati — analisi in corso...');
         extractedSubtitles = subtitles;
         displaySubtitles(subtitles);
+
+        setProgress(70, '> Generazione sintesi con AI...');
         await generateSummary(subtitles);
+
+        setProgress(100, '> Completato.');
       } catch (error) {
         console.error('Errore durante l\'elaborazione:', error);
         showError('Si è verificato un errore: ' + error.message);
@@ -292,7 +301,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   
     function showLoader() { loader.classList.add('active'); extractButton.disabled = true; }
-    function hideLoader() { loader.classList.remove('active'); extractButton.disabled = false; }
+    function hideLoader() {
+        loader.classList.remove('active');
+        progressWrap.classList.remove('active');
+        progressFill.style.width = '0%';
+        progressLabel.textContent = '';
+        extractButton.disabled = false;
+    }
+    function setProgress(pct, label) {
+        progressWrap.classList.add('active');
+        progressFill.style.width = pct + '%';
+        progressLabel.textContent = label;
+    }
     function showError(message) { errorMessage.textContent = message; errorMessage.style.display = 'block'; }
     function hideError() { errorMessage.style.display = 'none'; }
   
