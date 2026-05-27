@@ -105,7 +105,23 @@ document.addEventListener('DOMContentLoaded', () => {
         displaySubtitles(subtitles);
 
         setProgress(70, '> Generazione sintesi con AI...');
-        await generateSummary(subtitles);
+        const waitMsgs = [
+            '> Generazione sintesi con AI...',
+            '> Elaborazione in corso, i modelli free sono lenti...',
+            '> Ancora un momento...',
+            '> Quasi pronto...',
+        ];
+        let waitIdx = 0;
+        const waitTimer = setInterval(() => {
+            waitIdx = Math.min(waitIdx + 1, waitMsgs.length - 1);
+            const pct = Math.min(70 + waitIdx * 7, 95);
+            setProgress(pct, waitMsgs[waitIdx]);
+        }, 12000);
+        try {
+            await generateSummary(subtitles);
+        } finally {
+            clearInterval(waitTimer);
+        }
 
         setProgress(100, '> Completato.');
       } catch (error) {
@@ -141,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryText.innerHTML = '<div class="loading-indicator">Generazione della sintesi in corso...</div>';
   
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout: la richiesta ha impiegato troppo tempo')), 30000)
+          setTimeout(() => reject(new Error('Timeout: la richiesta ha impiegato troppo tempo')), 90000)
         );
   
         const fetchPromise = fetch(`${BACKEND_URL}/api/summarize`, {
