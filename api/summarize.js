@@ -17,17 +17,22 @@ export default async function handler(req, res) {
     try {
         const summary = await callOpenRouter(createSummaryPrompt(subtitles, length, style));
 
+        let recordId = null;
         if (videoId && isDbEnabled()) {
-            const saved = await saveTranscript({
-                videoId,
-                youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
-                transcript: subtitles,
-                summary
-            });
-            return res.status(200).json({ summary, recordId: saved.id, saved: true });
+            try {
+                const saved = await saveTranscript({
+                    videoId,
+                    youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
+                    transcript: subtitles,
+                    summary
+                });
+                recordId = saved?.id ?? null;
+            } catch (dbErr) {
+                console.error('[summarize] DB save failed (non-fatal):', dbErr.message);
+            }
         }
 
-        return res.status(200).json({ summary, saved: false });
+        return res.status(200).json({ summary, recordId, saved: recordId !== null });
     } catch (err) {
         return res.status(500).json({ message: err.message });
     }
