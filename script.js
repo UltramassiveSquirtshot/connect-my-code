@@ -149,65 +149,75 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   
-    async function generateSummary(subtitles) {
-      try {
-        const length = summaryLength.value;
-        const style = summaryStyle.value;
-  
+    async function generateSummary(subtitles, attempt = 1) {
+      const MAX_ATTEMPTS = 3;
+      const length = summaryLength.value;
+      const style = summaryStyle.value;
+
+      if (attempt === 1) {
         summaryText.innerHTML = '<div class="loading-indicator">Generazione della sintesi in corso...</div>';
-  
+        setProgressNormal();
+      } else {
+        setProgressRetry(attempt);
+      }
+
+      try {
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout: la richiesta ha impiegato troppo tempo')), 90000)
+          setTimeout(() => reject(new Error('timeout')), 90000)
         );
-  
+
         const fetchPromise = fetch(`${BACKEND_URL}/api/summarize`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ subtitles, length, style, videoId: currentVideoId })
         });
-  
+
         const response = await Promise.race([fetchPromise, timeoutPromise]);
-  
+
         if (!response.ok) {
-          let msg = 'Errore nella generazione della sintesi';
+          let msg = 'errore server';
           try { msg = (await response.json()).message || msg; } catch (_) {}
           throw new Error(msg);
         }
-  
+
         let data;
-        try {
-          data = await response.json();
-        } catch (e) {
-          throw new Error('Errore nel formato della risposta dal server');
-        }
-  
-        if (!data?.summary) throw new Error('La risposta del server non contiene una sintesi valida');
-  
+        try { data = await response.json(); } catch (e) { throw new Error('risposta non valida'); }
+        if (!data?.summary) throw new Error('sintesi mancante nella risposta');
+
+        setProgressNormal();
         displaySummary(data.summary, data.recordId);
         switchTab('summary');
       } catch (error) {
-        console.error('Errore nella generazione della sintesi:', error);
-        summaryText.innerHTML = `<div class="error-indicator">Errore nella generazione della sintesi: ${error.message}</div>`;
+        console.error(`[generateSummary] tentativo ${attempt} fallito:`, error.message);
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, 3000 + attempt * 2000));
+          return generateSummary(subtitles, attempt + 1);
+        }
+        summaryText.innerHTML = `<div class="error-indicator">Impossibile generare la sintesi dopo ${MAX_ATTEMPTS} tentativi: ${error.message}</div>`;
+        setProgressNormal();
         hideLoader();
       }
     }
+
+    function setProgressNormal() {
+      const fill = document.getElementById('progress-fill');
+      if (!fill) return;
+      fill.classList.remove('progress-retry');
+    }
+
+    function setProgressRetry(attempt) {
+      progressWrap.classList.add('active');
+      const fill = document.getElementById('progress-fill');
+      if (!fill) return;
+      fill.classList.add('progress-retry');
+      fill.style.width = '100%';
+      progressLabel.textContent = `> Ricerco un modello disponibile...`;
+    }
   
-    function displaySummary(summary, recordId) {
+    function displaySummary(summary) {
       summaryText.textContent = summary;
-  
       const existing = document.getElementById('db-download-actions');
       if (existing) existing.remove();
-  
-      if (recordId) {
-        const actions = document.createElement('div');
-        actions.id = 'db-download-actions';
-        actions.className = 'download-actions';
-        actions.innerHTML = `
-          <a href="/api/records/${recordId}/download?type=transcript" class="action-link">Scarica trascrizione (DB)</a>
-          <a href="/api/records/${recordId}/download?type=summary" class="action-link">Scarica riassunto (DB)</a>
-        `;
-        summaryText.parentElement.appendChild(actions);
-      }
     }
   
     // ─── BACKEND SUBTITLE FETCHING via Netlify Node Function ───────────────────

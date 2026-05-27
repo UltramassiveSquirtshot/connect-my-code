@@ -452,6 +452,25 @@ header { text-align: center; margin-bottom: var(--space-xl); }
     letter-spacing: 0.04em;
 }
 
+/* Stato retry: barra che pulsa in arancione */
+.progress-bar-fill.progress-retry {
+    background: linear-gradient(90deg, #ff6b00, #ff9500, #ff6b00);
+    background-size: 200% 100%;
+    box-shadow: 0 0 12px rgba(255, 107, 0, 0.6);
+    animation: progress-retry-pulse 1.2s ease-in-out infinite, progress-retry-slide 1.8s linear infinite;
+    transition: none;
+}
+
+@keyframes progress-retry-pulse {
+    0%, 100% { opacity: 0.75; box-shadow: 0 0 8px rgba(255, 107, 0, 0.4); }
+    50% { opacity: 1; box-shadow: 0 0 20px rgba(255, 107, 0, 0.9); }
+}
+
+@keyframes progress-retry-slide {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
 /* Error */
 .error-message {
     display: none;
