@@ -11,6 +11,9 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
+    <!-- Deep space background canvas -->
+    <canvas id="space-bg" aria-hidden="true"></canvas>
+
     <div class="bg-grid" aria-hidden="true"></div>
     <div class="bg-glow bg-glow--cyan" aria-hidden="true"></div>
     <div class="bg-glow bg-glow--violet" aria-hidden="true"></div>
@@ -37,147 +40,7 @@
     <div class="container">
         <header class="scroll-reveal">
             <div class="logo-container">
-                <!-- SVG logo — replaces logo-sr.png, transparent bg, app palette -->
-                <svg class="logo-svg" viewBox="0 0 820 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="YouTube Transcriptor">
-                    <defs>
-                        <!-- Badge fill gradient -->
-                        <linearGradient id="lg-badge" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%"   stop-color="#0d1117"/>
-                            <stop offset="100%" stop-color="#11141c"/>
-                        </linearGradient>
-                        <!-- Main text gradient: orange → cyan (preserves original energy) -->
-                        <linearGradient id="lg-text" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%"   stop-color="#ff7b00"/>
-                            <stop offset="55%"  stop-color="#ff9d3a"/>
-                            <stop offset="100%" stop-color="#00d4ff"/>
-                        </linearGradient>
-                        <!-- Prefix text gradient -->
-                        <linearGradient id="lg-prefix" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%"   stop-color="#00d4ff"/>
-                            <stop offset="100%" stop-color="#a855f7"/>
-                        </linearGradient>
-                        <!-- Border gradient -->
-                        <linearGradient id="lg-border" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%"   stop-color="#00d4ff" stop-opacity="0.7"/>
-                            <stop offset="50%"  stop-color="#a855f7" stop-opacity="0.5"/>
-                            <stop offset="100%" stop-color="#00d4ff" stop-opacity="0.3"/>
-                        </linearGradient>
-                        <!-- Glow filter -->
-                        <filter id="glow-text" x="-10%" y="-40%" width="120%" height="180%">
-                            <feGaussianBlur stdDeviation="3.5" result="blur"/>
-                            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-                        </filter>
-                        <filter id="glow-badge" x="-5%" y="-20%" width="110%" height="140%">
-                            <feGaussianBlur stdDeviation="6" result="blur"/>
-                            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-                        </filter>
-                        <filter id="glow-bracket" x="-20%" y="-20%" width="140%" height="140%">
-                            <feGaussianBlur stdDeviation="2.5" result="blur"/>
-                            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-                        </filter>
-                        <clipPath id="badge-clip">
-                            <rect x="4" y="4" width="812" height="152" rx="22" ry="22"/>
-                        </clipPath>
-                    </defs>
-
-                    <!-- Badge background -->
-                    <rect x="4" y="4" width="812" height="152" rx="22" ry="22"
-                          fill="url(#lg-badge)" opacity="0.92"/>
-
-                    <!-- Inner scanline texture -->
-                    <rect x="4" y="4" width="812" height="152" rx="22" ry="22"
-                          fill="none" clip-path="url(#badge-clip)">
-                        <pattern id="scan" x="0" y="0" width="1" height="4" patternUnits="userSpaceOnUse">
-                            <rect x="0" y="0" width="1" height="1" fill="rgba(255,255,255,0.015)"/>
-                        </pattern>
-                        <rect x="4" y="4" width="812" height="152" fill="url(#scan)"/>
-                    </rect>
-
-                    <!-- Border glow outline -->
-                    <rect x="4" y="4" width="812" height="152" rx="22" ry="22"
-                          fill="none" stroke="url(#lg-border)" stroke-width="1.5"
-                          filter="url(#glow-badge)"/>
-                    <!-- Crisp inner border -->
-                    <rect x="4" y="4" width="812" height="152" rx="22" ry="22"
-                          fill="none" stroke="url(#lg-border)" stroke-width="1"/>
-
-                    <!-- Top accent line -->
-                    <line x1="44" y1="20" x2="776" y2="20"
-                          stroke="url(#lg-prefix)" stroke-width="0.75" opacity="0.4"/>
-                    <!-- Bottom accent line -->
-                    <line x1="44" y1="140" x2="776" y2="140"
-                          stroke="url(#lg-prefix)" stroke-width="0.75" opacity="0.4"/>
-
-                    <!-- LEFT bracket — cyan -->
-                    <g filter="url(#glow-bracket)">
-                        <!-- vertical bar -->
-                        <rect x="18" y="28" width="4" height="104" rx="2" fill="#00d4ff" opacity="0.9"/>
-                        <!-- top arm -->
-                        <rect x="18" y="28" width="28" height="4" rx="2" fill="#00d4ff" opacity="0.9"/>
-                        <!-- bottom arm -->
-                        <rect x="18" y="128" width="28" height="4" rx="2" fill="#00d4ff" opacity="0.9"/>
-                        <!-- inner corner dots -->
-                        <rect x="30" y="36" width="6" height="6" rx="1" fill="#a855f7" opacity="0.7"/>
-                        <rect x="30" y="118" width="6" height="6" rx="1" fill="#a855f7" opacity="0.7"/>
-                    </g>
-
-                    <!-- RIGHT bracket — violet -->
-                    <g filter="url(#glow-bracket)">
-                        <rect x="798" y="28" width="4" height="104" rx="2" fill="#a855f7" opacity="0.9"/>
-                        <rect x="774" y="28" width="28" height="4" rx="2" fill="#a855f7" opacity="0.9"/>
-                        <rect x="774" y="128" width="28" height="4" rx="2" fill="#a855f7" opacity="0.9"/>
-                        <rect x="784" y="36" width="6" height="6" rx="1" fill="#00d4ff" opacity="0.7"/>
-                        <rect x="784" y="118" width="6" height="6" rx="1" fill="#00d4ff" opacity="0.7"/>
-                    </g>
-
-                    <!-- Gear left — matches original motif -->
-                    <g transform="translate(78,80)" opacity="0.55" fill="#00d4ff">
-                        <circle cx="0" cy="0" r="9" fill="none" stroke="#00d4ff" stroke-width="2"/>
-                        <circle cx="0" cy="0" r="3.5"/>
-                        <rect x="-1.5" y="-13" width="3" height="6" rx="1"/>
-                        <rect x="-1.5" y="7"  width="3" height="6" rx="1"/>
-                        <rect x="-13"  y="-1.5" width="6" height="3" rx="1"/>
-                        <rect x="7"    y="-1.5" width="6" height="3" rx="1"/>
-                        <rect x="-10.2" y="-10.2" width="3" height="6" rx="1" transform="rotate(45)"/>
-                        <rect x="4.5"   y="-10.2" width="3" height="6" rx="1" transform="rotate(45)"/>
-                        <rect x="-10.2" y="4.5"   width="3" height="6" rx="1" transform="rotate(-45)"/>
-                        <rect x="4.5"   y="4.5"   width="3" height="6" rx="1" transform="rotate(-45)"/>
-                    </g>
-
-                    <!-- Gear right -->
-                    <g transform="translate(742,80)" opacity="0.55" fill="#a855f7">
-                        <circle cx="0" cy="0" r="9" fill="none" stroke="#a855f7" stroke-width="2"/>
-                        <circle cx="0" cy="0" r="3.5"/>
-                        <rect x="-1.5" y="-13" width="3" height="6" rx="1"/>
-                        <rect x="-1.5" y="7"   width="3" height="6" rx="1"/>
-                        <rect x="-13"  y="-1.5" width="6" height="3" rx="1"/>
-                        <rect x="7"    y="-1.5" width="6" height="3" rx="1"/>
-                        <rect x="-10.2" y="-10.2" width="3" height="6" rx="1" transform="rotate(45)"/>
-                        <rect x="4.5"   y="-10.2" width="3" height="6" rx="1" transform="rotate(45)"/>
-                        <rect x="-10.2" y="4.5"   width="3" height="6" rx="1" transform="rotate(-45)"/>
-                        <rect x="4.5"   y="4.5"   width="3" height="6" rx="1" transform="rotate(-45)"/>
-                    </g>
-
-                    <!-- "YouTube" prefix label -->
-                    <text x="410" y="52"
-                          text-anchor="middle"
-                          font-family="'JetBrains Mono', monospace"
-                          font-size="16"
-                          font-weight="500"
-                          letter-spacing="6"
-                          fill="url(#lg-prefix)"
-                          opacity="0.85">YOUTUBE</text>
-
-                    <!-- Main wordmark: TRANSCRIPTOR -->
-                    <text x="410" y="116"
-                          text-anchor="middle"
-                          font-family="'Space Grotesk', system-ui, sans-serif"
-                          font-size="68"
-                          font-weight="700"
-                          letter-spacing="4"
-                          fill="url(#lg-text)"
-                          filter="url(#glow-text)">TRANSCRIPTOR</text>
-                </svg>
+                <img src="logo-sr.png" alt="YoutubeTranscriptor" class="logo">
             </div>
             <p class="tagline">
                 <span class="tagline__prompt">&gt;</span>
@@ -328,6 +191,136 @@
 
     <script src="script.js"></script>
     <script>
+        // ── Deep space background ─────────────────────────────────────────────
+        (function () {
+            var REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            var canvas  = document.getElementById('space-bg');
+            if (!canvas) return;
+            var ctx = canvas.getContext('2d');
+            var W, H, stars = [], nebulae = [];
+
+            function resize() {
+                W = canvas.width  = window.innerWidth;
+                H = canvas.height = window.innerHeight;
+                buildScene();
+            }
+
+            function rand(min, max) { return min + Math.random() * (max - min); }
+
+            function buildScene() {
+                stars = [];
+                nebulae = [];
+
+                // Layer 1 — tiny distant stars (many, dim)
+                for (var i = 0; i < 320; i++) {
+                    stars.push({
+                        x: rand(0, W), y: rand(0, H),
+                        r: rand(0.2, 0.7),
+                        a: rand(0.3, 0.8),
+                        twinkleSpeed: rand(0.4, 1.2),
+                        twinkleOffset: rand(0, Math.PI * 2),
+                        layer: 0
+                    });
+                }
+                // Layer 2 — medium stars
+                for (var i = 0; i < 80; i++) {
+                    stars.push({
+                        x: rand(0, W), y: rand(0, H),
+                        r: rand(0.6, 1.4),
+                        a: rand(0.5, 1.0),
+                        twinkleSpeed: rand(0.6, 1.8),
+                        twinkleOffset: rand(0, Math.PI * 2),
+                        layer: 1
+                    });
+                }
+                // Layer 3 — bright foreground stars (few, with glow)
+                for (var i = 0; i < 18; i++) {
+                    stars.push({
+                        x: rand(0, W), y: rand(0, H),
+                        r: rand(1.2, 2.4),
+                        a: rand(0.7, 1.0),
+                        twinkleSpeed: rand(0.8, 2.0),
+                        twinkleOffset: rand(0, Math.PI * 2),
+                        layer: 2
+                    });
+                }
+
+                // Nebula clouds — large soft radial gradients
+                nebulae.push({ x: W * 0.82, y: H * -0.05, rx: W * 0.55, ry: H * 0.55, r: 168, g: 85,  b: 247, a: 0.055 });
+                nebulae.push({ x: W * -0.05, y: H * 0.35, rx: W * 0.50, ry: H * 0.50, r: 0,   g: 212, b: 255, a: 0.045 });
+                nebulae.push({ x: W * 0.50, y: H * 0.85,  rx: W * 0.40, ry: H * 0.40, r: 168, g: 85,  b: 247, a: 0.030 });
+                // Milky way band — diagonal faint strip
+                nebulae.push({ x: W * 0.5, y: H * 0.45, rx: W * 1.2, ry: H * 0.14, r: 120, g: 140, b: 200, a: 0.022, angle: -18 });
+            }
+
+            var t = 0;
+            function frame() {
+                ctx.clearRect(0, 0, W, H);
+
+                // Deep space base
+                ctx.fillStyle = '#020408';
+                ctx.fillRect(0, 0, W, H);
+
+                // Nebulae
+                nebulae.forEach(function (n) {
+                    ctx.save();
+                    if (n.angle) {
+                        ctx.translate(n.x, n.y);
+                        ctx.rotate(n.angle * Math.PI / 180);
+                        ctx.translate(-n.x, -n.y);
+                    }
+                    var grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, Math.max(n.rx, n.ry));
+                    grd.addColorStop(0,   'rgba(' + n.r + ',' + n.g + ',' + n.b + ',' + n.a + ')');
+                    grd.addColorStop(0.5, 'rgba(' + n.r + ',' + n.g + ',' + n.b + ',' + (n.a * 0.3) + ')');
+                    grd.addColorStop(1,   'rgba(' + n.r + ',' + n.g + ',' + n.b + ',0)');
+                    ctx.save();
+                    ctx.scale(n.rx / Math.max(n.rx, n.ry), n.ry / Math.max(n.rx, n.ry));
+                    ctx.fillStyle = grd;
+                    ctx.beginPath();
+                    ctx.arc(
+                        n.x / (n.rx / Math.max(n.rx, n.ry)),
+                        n.y / (n.ry / Math.max(n.rx, n.ry)),
+                        Math.max(n.rx, n.ry), 0, Math.PI * 2
+                    );
+                    ctx.fill();
+                    ctx.restore();
+                    ctx.restore();
+                });
+
+                // Stars
+                stars.forEach(function (s) {
+                    var twinkle = REDUCED ? s.a : s.a * (0.7 + 0.3 * Math.sin(t * s.twinkleSpeed + s.twinkleOffset));
+                    ctx.globalAlpha = twinkle;
+
+                    if (s.layer === 2) {
+                        // Glow halo for bright stars
+                        var grd = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 5);
+                        grd.addColorStop(0,   'rgba(200,230,255,0.6)');
+                        grd.addColorStop(0.3, 'rgba(180,210,255,0.15)');
+                        grd.addColorStop(1,   'rgba(180,210,255,0)');
+                        ctx.fillStyle = grd;
+                        ctx.beginPath();
+                        ctx.arc(s.x, s.y, s.r * 5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                    // Star core
+                    ctx.fillStyle = s.layer === 0 ? '#a0b8d0' : s.layer === 1 ? '#c8dcf0' : '#e8f4ff';
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+
+                ctx.globalAlpha = 1;
+                if (!REDUCED) t += 0.012;
+                requestAnimationFrame(frame);
+            }
+
+            resize();
+            window.addEventListener('resize', resize, { passive: true });
+            requestAnimationFrame(frame);
+        })();
+
         // ── Copy button visual feedback ───────────────────────────────────────
         ['copy-button', 'copy-summary-button'].forEach(function (id) {
             var btn = document.getElementById(id);
