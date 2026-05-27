@@ -258,28 +258,58 @@ body {
     padding: var(--space-xl) var(--space-lg);
 }
 
-/* ── Scroll-reveal ────────────────────────────────────────────────────────── */
+/* ── Scroll-reveal — clip-path + perspective entrance ────────────────────── */
 .scroll-reveal {
     opacity: 0;
-    transform: translateY(28px);
-    transition: opacity 0.55s cubic-bezier(0.4,0,0.2,1), transform 0.55s cubic-bezier(0.4,0,0.2,1);
+    transform: perspective(900px) rotateX(14deg) translateY(48px) scale(0.97);
+    clip-path: inset(0 0 18% 0 round 12px);
+    transform-origin: center top;
+    transition:
+        opacity   0.65s cubic-bezier(0.22, 1, 0.36, 1),
+        transform 0.65s cubic-bezier(0.22, 1, 0.36, 1),
+        clip-path 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform, opacity, clip-path;
+}
+/* Right variant — enters from slight right tilt */
+.scroll-reveal--right {
+    transform: perspective(900px) rotateX(10deg) rotateY(-5deg) translateY(48px) scale(0.97);
+    clip-path: inset(0 18% 0 0 round 12px);
+    transform-origin: left center;
 }
 .scroll-reveal.revealed {
     opacity: 1;
-    transform: translateY(0);
+    transform: perspective(900px) rotateX(0deg) rotateY(0deg) translateY(0) scale(1);
+    clip-path: inset(0 0 0 0 round 12px);
 }
-.scroll-reveal:nth-child(2) { transition-delay: 0.08s; }
-.scroll-reveal:nth-child(3) { transition-delay: 0.14s; }
-.scroll-reveal:nth-child(4) { transition-delay: 0.20s; }
+
+/* Header gets a faster, simpler reveal — it's the hero */
+header.scroll-reveal {
+    transform: translateY(-24px) scale(1.02);
+    clip-path: inset(0 0 0 0 round 0px);
+    transform-origin: center center;
+    transition:
+        opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+        transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+header.scroll-reveal.revealed {
+    transform: translateY(0) scale(1);
+}
 
 @media (prefers-reduced-motion: reduce) {
-    .scroll-reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+    .scroll-reveal,
+    .scroll-reveal--right,
+    header.scroll-reveal { opacity: 1 !important; transform: none !important; clip-path: none !important; transition: none !important; }
     .glyph, .geo, .bg-glow, .ambient-col { animation: none !important; }
     .particles-canvas { display: none; }
 }
 
 /* ── Header ───────────────────────────────────────────────────────────────── */
-header { text-align: center; margin-bottom: var(--space-xl); }
+header {
+    text-align: center;
+    margin-bottom: var(--space-xl);
+    will-change: transform, opacity;
+    transform-origin: center top;
+}
 
 .logo-container {
     display: flex;

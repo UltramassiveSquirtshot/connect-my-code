@@ -204,14 +204,22 @@
             });
         });
 
-        // ── Scroll-reveal via IntersectionObserver ────────────────────────────
+        // ── Scroll-reveal — clip-path + rotateX dramatic entrance ────────────
         (function () {
-            if (!('IntersectionObserver' in window)) {
-                document.querySelectorAll('.scroll-reveal').forEach(function (el) {
-                    el.classList.add('revealed');
-                });
+            var REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            var els = document.querySelectorAll('.scroll-reveal');
+
+            if (REDUCED || !('IntersectionObserver' in window)) {
+                els.forEach(function (el) { el.classList.add('revealed'); });
                 return;
             }
+
+            // assign stagger delays and alternating directions
+            els.forEach(function (el, i) {
+                el.style.transitionDelay = (i * 0.10) + 's';
+                if (i % 2 === 1) el.classList.add('scroll-reveal--right');
+            });
+
             var io = new IntersectionObserver(function (entries) {
                 entries.forEach(function (e) {
                     if (e.isIntersecting) {
@@ -219,8 +227,43 @@
                         io.unobserve(e.target);
                     }
                 });
-            }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
-            document.querySelectorAll('.scroll-reveal').forEach(function (el) { io.observe(el); });
+            }, { threshold: 0.05, rootMargin: '0px 0px -20px 0px' });
+            els.forEach(function (el) { io.observe(el); });
+        })();
+
+        // ── Scroll-driven parallax (logo + bg glows) ──────────────────────────
+        (function () {
+            var REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (REDUCED) return;
+
+            var header   = document.querySelector('header');
+            var glowCyan = document.querySelector('.bg-glow--cyan');
+            var glowVio  = document.querySelector('.bg-glow--violet');
+            var ticking  = false;
+            var lastY    = 0;
+
+            function onScroll() {
+                lastY = window.scrollY;
+                if (!ticking) {
+                    requestAnimationFrame(update);
+                    ticking = true;
+                }
+            }
+
+            function update() {
+                var y = lastY;
+                // logo floats up faster than scroll — strong parallax feel
+                if (header) {
+                    header.style.transform = 'translateY(' + (y * -0.38) + 'px)';
+                    header.style.opacity   = Math.max(0, 1 - y / 280);
+                }
+                // bg glows drift in opposite directions
+                if (glowCyan) glowCyan.style.transform = 'translate3d(0,' + (y *  0.22) + 'px,0)';
+                if (glowVio)  glowVio.style.transform  = 'translate3d(0,' + (y * -0.18) + 'px,0)';
+                ticking = false;
+            }
+
+            window.addEventListener('scroll', onScroll, { passive: true });
         })();
 
         // ── Ambient particles canvas (lateral columns only) ───────────────────
