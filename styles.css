@@ -316,27 +316,58 @@ header {
     justify-content: center;
     margin-bottom: var(--space-md);
     filter:
-        drop-shadow(0 0 32px rgba(0, 212, 255, 0.22))
-        drop-shadow(0 8px 32px rgba(168, 85, 247, 0.14))
-        drop-shadow(0 2px 8px rgba(0,0,0,0.5));
-    transition: filter var(--t-normal);
+        drop-shadow(0 0 28px rgba(0, 212, 255, 0.20))
+        drop-shadow(0 0 56px rgba(168, 85, 247, 0.12));
+    transition: filter 0.4s ease;
 }
 .logo-container:hover {
     filter:
-        drop-shadow(0 0 48px rgba(0, 212, 255, 0.38))
-        drop-shadow(0 8px 48px rgba(168, 85, 247, 0.24))
-        drop-shadow(0 2px 8px rgba(0,0,0,0.5));
+        drop-shadow(0 0 40px rgba(0, 212, 255, 0.38))
+        drop-shadow(0 0 80px rgba(168, 85, 247, 0.22))
+        drop-shadow(0 4px 16px rgba(0,0,0,0.5));
 }
-.logo-container img,
-.logo {
+
+/* SVG logo sizing + animations */
+.logo-svg {
     width: 100%;
-    max-width: 680px;   /* scaled up from 520px */
+    max-width: 720px;
+    height: auto;
+    transition: transform var(--t-spring);
+    animation: logo-breathe 5s ease-in-out infinite;
+}
+.logo-container:hover .logo-svg {
+    transform: scale(1.015);
+    animation-play-state: paused;
+}
+
+/* Subtle breathing glow on the badge */
+@keyframes logo-breathe {
+    0%, 100% { filter: brightness(1)   saturate(1); }
+    50%       { filter: brightness(1.06) saturate(1.12); }
+}
+
+/* Gear spin via CSS — targets the gear <g> elements by position */
+.logo-svg g[transform*="translate(78"] {
+    transform-origin: 78px 80px;
+    animation: gear-spin 12s linear infinite;
+}
+.logo-svg g[transform*="translate(742"] {
+    transform-origin: 742px 80px;
+    animation: gear-spin 9s linear infinite reverse;
+}
+@keyframes gear-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+/* Fallback for PNG logo if SVG not present */
+.logo-container img.logo {
+    width: 100%;
+    max-width: 720px;
     height: auto;
     transition: transform var(--t-spring);
 }
-.logo-container:hover .logo {
-    transform: scale(1.012);
-}
+.logo-container:hover img.logo { transform: scale(1.012); }
 
 .tagline {
     font-family: var(--font-mono);
